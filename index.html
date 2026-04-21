@@ -3573,6 +3573,10 @@ function PodcastPage({ addToast, user }) {
         </div>
         {pts>0&&<div style={{textAlign:'right',position:'relative',zIndex:1}}><div style={{fontSize:10,opacity:.7}}>Karma</div><div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700}}>{pts} pts</div></div>}
       </div>
+      <div className="section-banner">
+        <img src="https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/podcast.JPG"
+          alt="Podcast Deportivo" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
+      </div>
       <div className="tabs" style={{flexWrap:'nowrap',overflowX:'auto'}}>
         {[{id:'destacados',l:'🔥 Destacados'},{id:'programas',l:'📻 Programas'},{id:'episodios',l:'▶️ Episodios'},{id:'subir',l:'🎙️ Subir'},{id:'ranking',l:'🏆 Ranking'},{id:'comunidad',l:'💬 Comunidad'}].map(t=>(
           <div key={t.id} className={`tabx${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</div>
