@@ -3384,10 +3384,6 @@ function PeriodismoDeportivoSubTab({ addToast }) {
           <Ic.Pen style={{width:12,height:12}}/> Publicar columna
         </button>
       </div>
-      <div className="section-banner">
-        <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/reddeperiodismo.png"
-          alt="Red de Periodismo Deportivo" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
-      </div>
       <div className="tabs" style={{flexWrap:'wrap'}}>
         {[{id:'articulos',l:'📰 Artículos'},{id:'publicar',l:'✍️ Publicar'},{id:'chat_vivo',l:'🎙️ Chat'},{id:'recursos',l:'🛠️ Recursos'},{id:'cursos',l:'🎓 Formación'}].map(t => (
           <div key={t.id} className={`tabx${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</div>
