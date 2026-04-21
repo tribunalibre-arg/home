@@ -539,6 +539,54 @@ img{max-width:100%;height:auto;display:block}
 .format-btn .fem{font-size:20px;display:block;margin-bottom:3px}
 .format-btn .fnm{font-size:10px;font-weight:600;color:var(--tx2)}
 
+/* ═══ PODCAST ═══ */
+.pod-hero{background:linear-gradient(135deg,#1a1a2e,#16213e,#2d1b69);border-radius:var(--rl);padding:20px;margin-bottom:16px;color:white;position:relative;overflow:hidden}
+.pod-hero::before{content:'';position:absolute;top:-40px;right:-40px;width:160px;height:160px;border-radius:50%;background:rgba(139,92,246,.18);pointer-events:none}
+.pod-ep-art{width:80px;height:80px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:38px;flex-shrink:0;background:rgba(255,255,255,.12);border:1.5px solid rgba(255,255,255,.2)}
+.pod-player{background:rgba(255,255,255,.08);border-radius:var(--r);padding:14px;margin-top:14px;border:1px solid rgba(255,255,255,.12)}
+.pod-progress{height:5px;background:rgba(255,255,255,.2);border-radius:3px;margin:10px 0;cursor:pointer;position:relative}
+.pod-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#A78BFA,#7C3AED);transition:.1s}
+.pod-controls{display:flex;align-items:center;justify-content:center;gap:20px}
+.pod-ctrl-btn{background:none;border:none;color:rgba(255,255,255,.7);cursor:pointer;font-size:18px;padding:4px;transition:.15s;line-height:1}
+.pod-ctrl-btn:hover{color:white}
+.pod-ctrl-play{width:42px;height:42px;border-radius:50%;background:white;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;font-size:16px;color:#2d1b69;transition:.15s;flex-shrink:0}
+.pod-ctrl-play:hover{background:rgba(255,255,255,.9);transform:scale(1.05)}
+.pod-time{display:flex;justify-content:space-between;font-size:10px;opacity:.55;margin-top:4px}
+
+.pod-show-card{background:var(--white);border:1px solid var(--br);border-radius:var(--r);overflow:hidden;cursor:pointer;transition:.2s;margin-bottom:10px;display:flex;gap:0}
+.pod-show-card:hover{border-color:var(--purple);box-shadow:var(--sh);transform:translateY(-2px)}
+.pod-show-art{width:80px;height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;flex-shrink:0}
+.pod-show-body{padding:10px 12px;flex:1;min-width:0}
+.pod-show-title{font-family:var(--fd);font-size:13px;font-weight:700;color:var(--tx);margin-bottom:3px}
+.pod-show-host{font-size:10px;color:var(--purple);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px}
+.pod-show-desc{font-size:11px;color:var(--tx2);line-height:1.45;margin-bottom:6px}
+.pod-show-foot{display:flex;align-items:center;gap:8px;font-size:10px;color:var(--tx3)}
+
+.pod-ep-card{background:var(--white);border:1px solid var(--br);border-radius:var(--r);padding:12px 13px;margin-bottom:8px;display:flex;gap:11px;align-items:flex-start;cursor:pointer;transition:.2s}
+.pod-ep-card:hover{border-color:var(--purple);box-shadow:var(--sh)}
+.pod-ep-art-sm{width:52px;height:52px;border-radius:var(--rs);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0}
+.pod-ep-title{font-family:var(--fd);font-size:13px;font-weight:600;color:var(--tx);line-height:1.3;margin-bottom:3px}
+.pod-ep-meta{font-size:10px;color:var(--tx3);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.pod-ep-play{width:32px;height:32px;border-radius:50%;background:var(--purple);display:flex;align-items:center;justify-content:center;color:white;font-size:13px;flex-shrink:0;align-self:center;border:none;cursor:pointer;transition:.15s}
+.pod-ep-play:hover{background:#7C3AED;transform:scale(1.08)}
+.pod-ep-likes{display:flex;align-items:center;gap:3px;margin-left:auto;cursor:pointer;font-size:10px;color:var(--tx3)}
+.pod-ep-likes:hover{color:var(--red)}
+
+.pod-rank-item{background:var(--white);border:1px solid var(--br);border-radius:var(--r);padding:11px 14px;margin-bottom:8px;display:flex;align-items:center;gap:11px;transition:.2s}
+.pod-rank-item:hover{border-color:var(--purple);box-shadow:var(--sh)}
+.pod-rank-num{font-family:var(--fd);font-size:20px;font-weight:700;color:var(--tx3);width:26px;text-align:center;flex-shrink:0}
+.pod-rank-art{width:44px;height:44px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0}
+.pod-rank-name{font-family:var(--fd);font-size:13px;font-weight:600;color:var(--tx)}
+.pod-rank-sub{font-size:10px;color:var(--purple);font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+.pod-rank-plays{font-size:12px;font-weight:700;color:var(--purple);background:rgba(139,92,246,.1);padding:3px 9px;border-radius:10px;white-space:nowrap;margin-left:auto}
+
+.pod-source-tag{display:inline-flex;align-items:center;gap:4px;font-size:9px;padding:2px 7px;border-radius:8px;font-weight:700;text-transform:uppercase;letter-spacing:.5px}
+.pod-src-spotify{background:rgba(30,215,96,.12);color:#1DB954;border:1px solid rgba(30,215,96,.25)}
+.pod-src-youtube{background:rgba(255,0,0,.1);color:#FF0000;border:1px solid rgba(255,0,0,.2)}
+.pod-src-anchor{background:rgba(139,92,246,.12);color:var(--purple);border:1px solid rgba(139,92,246,.25)}
+.pod-src-rss{background:rgba(246,180,14,.12);color:#B7770D;border:1px solid rgba(246,180,14,.3)}
+.pod-src-tribuna{background:rgba(8,145,178,.12);color:var(--teal);border:1px solid rgba(8,145,178,.25)}
+
 /* PERIODISMO DEPORTIVO */
 .peri-card{background:var(--white);border-radius:var(--r);border:1px solid var(--br);overflow:hidden;cursor:pointer;transition:.2s}
 .peri-card:hover{border-color:var(--purple);box-shadow:0 8px 30px rgba(139,92,246,.18);transform:translateY(-2px)}
@@ -733,6 +781,38 @@ const RED_ACTIVIDAD_INIT = [
   {id:5,av:'SB',color:'#EC4899',text:'<b>Sofía Berardi</b> ofreció mentoría a 2 periodistas nuevos',tiempo:'3 hs',tipo:'mentor'},
   {id:6,av:'VC',color:'#F59E0B',text:'<b>Valeria Cruz</b> publicó entrevista — "Los datos detrás de Los Pumas"',tiempo:'4 hs',tipo:'nota'},
 ];
+
+/* ══════════════════════════ PODCAST DATA ══════════════════════════ */
+const POD_SHOWS = [
+  {id:1,em:'🎙️',titulo:'El Vestuario',host:'Lucas Miró',desc:'El podcast de básquet más escuchado de Argentina. Análisis táctico, entrevistas exclusivas y debate sin filtro.',deporte:'Básquet',episodios:214,seguidores:18200,src:'spotify',srcUrl:'https://open.spotify.com/show/',color:'#1DB954',bg:'rgba(30,215,96,.1)',verificado:true},
+  {id:2,em:'⚽',titulo:'Tribuna al Palo',host:'Redacción TL',desc:'El fútbol argentino sin maquillaje. Desde la B Nacional hasta la Libertadores. Nuevos episodios cada lunes y jueves.',deporte:'Fútbol',episodios:87,seguidores:9400,src:'anchor',srcUrl:'#',color:'#8B5CF6',bg:'rgba(139,92,246,.1)',verificado:true},
+  {id:3,em:'🏉',titulo:'El Maul',host:'Martina Solís',desc:'Rugby argentino en profundidad. Los Pumas, el Top 14, el Super Rugby. Con invitados de la Unión Argentina de Rugby.',deporte:'Rugby',episodios:56,seguidores:6100,src:'spotify',srcUrl:'#',color:'#E8593C',bg:'rgba(232,89,60,.1)',verificado:false},
+  {id:4,em:'🏎️',titulo:'Boxes AR',host:'Emanuel Ríos',desc:'Fórmula 1 con acento argentino. Análisis técnico, noticias del paddock y seguimiento de Colapinto.',deporte:'F1',episodios:43,seguidores:7800,src:'youtube',srcUrl:'#',color:'#FF0000',bg:'rgba(255,0,0,.08)',verificado:true},
+  {id:5,em:'🎾',titulo:'Punto de Break',host:'Valeria Cruz',desc:'Tenis argentino e internacional. Rankings, torneos y las historias detrás de los jugadores.',deporte:'Tenis',episodios:31,seguidores:3200,src:'anchor',srcUrl:'#',color:'#F59E0B',bg:'rgba(245,158,11,.1)',verificado:false},
+  {id:6,em:'🏀',titulo:'En La Pintura',host:'Rodrigo Peralta',desc:'NBA, Liga Nacional y básquet olímpico. El deporte de la canasta explicado con pasión y datos.',deporte:'Básquet',episodios:28,seguidores:4100,src:'spotify',srcUrl:'#',color:'#4A90D9',bg:'rgba(74,144,217,.1)',verificado:false},
+];
+
+const POD_EPISODES = [
+  {id:1,showId:1,em:'🎙️',showTitle:'El Vestuario',titulo:'#214 — Final de la Liga Nacional: análisis completo',desc:'78 minutos con los protagonistas. El head coach campeón, el MVP y todo lo que pasó en el vestuario.',dur:'1:18:04',fecha:'hace 2 hs',plays:3200,likes:442,src:'spotify',srcUrl:'https://open.spotify.com/episode/',color:'#1DB954',showBg:'rgba(30,215,96,.15)'},
+  {id:2,showId:2,em:'⚽',showTitle:'Tribuna al Palo',titulo:'Superclásico 2-1: qué cambió Demichelis en el entretiempo',desc:'Análisis táctico en profundidad. Los datos, la formación y por qué River fue superior en los 45 minutos finales.',dur:'52:17',fecha:'hace 5 hs',plays:1840,likes:231,src:'anchor',srcUrl:'#',color:'#8B5CF6',showBg:'rgba(139,92,246,.15)'},
+  {id:3,showId:3,em:'🏉',showTitle:'El Maul',titulo:'Los Pumas vs All Blacks: la victoria histórica analizada al detalle',desc:'Con Agustín Creevy como invitado. El scrum, el line y el try de Matera que cambió el partido.',dur:'1:04:33',fecha:'hace 1 día',plays:2100,likes:318,src:'spotify',srcUrl:'#',color:'#E8593C',showBg:'rgba(232,89,60,.15)'},
+  {id:4,showId:4,em:'🏎️',showTitle:'Boxes AR',titulo:'Colapinto en Mónaco: análisis del mejor tiempo de su carrera',desc:'Sector por sector, la vuelta 1:10.821 de Franco. Con datos de telemetría y comparativa con Hamilton.',dur:'38:45',fecha:'hace 1 día',plays:4500,likes:678,src:'youtube',srcUrl:'#',color:'#FF0000',showBg:'rgba(255,0,0,.1)'},
+  {id:5,showId:5,em:'🎾',showTitle:'Punto de Break',titulo:'Cerúndolo en semis de Madrid: ¿puede ganar el torneo?',desc:'Con estadísticas avanzadas y comparativa con sus mejores actuaciones en tierra batida.',dur:'29:12',fecha:'hace 2 días',plays:980,likes:87,src:'anchor',srcUrl:'#',color:'#F59E0B',showBg:'rgba(245,158,11,.12)'},
+  {id:6,showId:1,em:'🎙️',showTitle:'El Vestuario',titulo:'#213 — Entrevista exclusiva: Facundo Campazzo habla de su regreso',desc:'El base cordobés, su etapa en Europa, el sueño NBA y la selección argentina.',dur:'1:02:48',fecha:'hace 3 días',plays:5100,likes:761,src:'spotify',srcUrl:'#',color:'#1DB954',showBg:'rgba(30,215,96,.15)'},
+];
+
+const POD_RSS_FEEDS = [
+  {name:'TyC Sports Podcast',url:'https://anchor.fm/s/tycsports/podcast/rss',em:'📺'},
+  {name:'ESPN Argentina Audio',url:'https://www.espn.com/espn/rss/news',em:'🟠'},
+  {name:'Radio La Red',url:'https://lared.com.ar/feed',em:'📻'},
+];
+
+function usePodKarma(userId='guest'){
+  const key='pod_karma_'+userId;
+  const [pts,setPts]=useState(()=>{try{return parseInt(ls.get(key)||'0');}catch{return 0;}});
+  function sumar(n){setPts(p=>{const v=p+n;ls.set(key,String(v));return v;});}
+  return {pts,sumar};
+}
 
 const RED_TOPICOS = [
   {id:1,nombre:'Copa Libertadores 2026',meta:'42 notas · 8 activos',heat:'🔥'},
@@ -1121,6 +1201,26 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
         </div>
       </div>
 
+      {/* ── PODCAST PREVIEW ── */}
+      <div className="home-preview">
+        <div className="home-preview-hd">
+          <div className="home-preview-title"><span>🎙️</span>Podcast</div>
+          <button className="home-preview-btn" onClick={()=>onNav('podcast')}>Ver todo →</button>
+        </div>
+        <div className="home-preview-body">
+          {POD_EPISODES.slice(0,3).map(ep => (
+            <div key={ep.id} className="stream-row" onClick={()=>onNav('podcast')}>
+              <div className="stream-row-em">{ep.em}</div>
+              <div className="stream-row-info">
+                <div className="stream-row-title">{ep.titulo}</div>
+                <div className="stream-row-ch">{ep.showTitle} · {ep.dur}</div>
+              </div>
+              <div style={{fontSize:10,color:'var(--tx3)',flexShrink:0}}>▶ {ep.plays.toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
       {/* ACCESOS RÁPIDOS */}
       <div style={{display:'grid',gap:10,gridTemplateColumns:'1fr 1fr',marginBottom:18}}>
         {[
@@ -1155,11 +1255,12 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
       <div className="sh"><div className="st">Encuesta del Día</div></div>
       <div className="card cp" style={{marginBottom:18}}><Poll poll={STATIC_POLLS[0]}/></div>
 
-      {/* ACCESO RÁPIDO A RED DE PERIODISMO */}
-      <div style={{display:'grid',gap:10,gridTemplateColumns:'1fr 1fr',marginBottom:8}}>
+      {/* ACCESO RÁPIDO A RED, PODCAST Y COPAS */}
+      <div style={{display:'grid',gap:10,gridTemplateColumns:'1fr 1fr 1fr',marginBottom:8}}>
         {[
-          {id:'red',     em:'🌐',tit:'Red de Periodismo', sub:'Conectá con colegas',  col:'var(--teal)',  bg:'rgba(8,145,178,.08)'},
-          {id:'copa',    em:'🌎',tit:'Copas',             sub:'Mundial y Libertadores',col:'var(--cel-d)',bg:'var(--cel-xl)'},
+          {id:'red',     em:'🌐',tit:'Red Periodismo', sub:'Conectá con colegas',  col:'var(--teal)',  bg:'rgba(8,145,178,.08)'},
+          {id:'podcast', em:'🎙️',tit:'Podcast',         sub:'Escuchá y publicá',    col:'var(--purple)',bg:'rgba(139,92,246,.08)'},
+          {id:'copa',    em:'🌎',tit:'Copas',           sub:'Libertadores y más',   col:'var(--cel-d)',bg:'var(--cel-xl)'},
         ].map(s => (
           <div key={s.id} onClick={()=>onNav(s.id)}
             style={{background:s.bg,border:`1.5px solid ${s.col}22`,borderRadius:'var(--r)',padding:'14px 12px',cursor:'pointer',transition:'.2s',textAlign:'center'}}
@@ -3462,6 +3563,405 @@ function PeriodismoDeportivoSubTab({ addToast }) {
   );
 }
 
+/* ══════ PODCAST PAGE ══════ */
+function PodcastPage({ addToast, user }) {
+  const [tab, setTab] = useState('destacados');
+  const {pts, sumar} = usePodKarma('guest');
+  return (
+    <div>
+      <div style={{background:'linear-gradient(135deg,#2d1b69,#4c1d95,#5b21b6)',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12,position:'relative',overflow:'hidden'}}>
+        <span style={{fontSize:28,position:'relative',zIndex:1}}>🎙️</span>
+        <div style={{flex:1,position:'relative',zIndex:1}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700}}>Podcast Deportivo</div>
+          <div style={{fontSize:11,opacity:.8}}>Escuchá · Creá · Compartí tu programa</div>
+        </div>
+        {pts>0&&<div style={{textAlign:'right',position:'relative',zIndex:1}}><div style={{fontSize:10,opacity:.7}}>Karma</div><div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700}}>{pts} pts</div></div>}
+      </div>
+      <div className="tabs" style={{flexWrap:'nowrap',overflowX:'auto'}}>
+        {[{id:'destacados',l:'🔥 Destacados'},{id:'programas',l:'📻 Programas'},{id:'episodios',l:'▶️ Episodios'},{id:'subir',l:'🎙️ Subir'},{id:'ranking',l:'🏆 Ranking'},{id:'comunidad',l:'💬 Comunidad'}].map(t=>(
+          <div key={t.id} className={`tabx${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</div>
+        ))}
+      </div>
+      {tab==='destacados' && <PodDestacadosTab sumar={sumar} addToast={addToast}/>}
+      {tab==='programas'  && <PodProgramasTab  sumar={sumar} addToast={addToast}/>}
+      {tab==='episodios'  && <PodEpisodiosTab  sumar={sumar} addToast={addToast}/>}
+      {tab==='subir'      && <PodSubirTab      sumar={sumar} addToast={addToast} user={user}/>}
+      {tab==='ranking'    && <PodRankingTab/>}
+      {tab==='comunidad'  && <PodComunidadTab  sumar={sumar} addToast={addToast}/>}
+    </div>
+  );
+}
+
+/* ── DESTACADOS ── */
+function PodDestacadosTab({ sumar, addToast }) {
+  const ep = POD_EPISODES[0];
+  const [playing, setPlaying] = useState(false);
+  const [progreso, setProgreso] = useState(18);
+
+  function togglePlay(){
+    setPlaying(p=>!p);
+    if(!playing){ sumar(1); }
+  }
+  useEffect(()=>{
+    if(!playing) return;
+    const t = setInterval(()=>setProgreso(p=>p>=100?100:p+0.1),500);
+    return ()=>clearInterval(t);
+  },[playing]);
+
+  function abrirExterno(ep){
+    if(ep.srcUrl && ep.srcUrl!=='#') window.open(ep.srcUrl,'_blank');
+    else addToast({msg:'Enlace externo no configurado en demo',type:'ok'});
+  }
+
+  return (
+    <div>
+      <div className="pod-hero">
+        <div style={{display:'flex',gap:14,alignItems:'flex-start',position:'relative',zIndex:1}}>
+          <div className="pod-ep-art">{ep.em}</div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:9,fontWeight:700,letterSpacing:1,opacity:.6,textTransform:'uppercase',marginBottom:4}}>{ep.showTitle}</div>
+            <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700,lineHeight:1.25,marginBottom:6}}>{ep.titulo}</div>
+            <div style={{fontSize:11,opacity:.7,lineHeight:1.5}}>{ep.desc}</div>
+            <div style={{display:'flex',gap:8,marginTop:10,flexWrap:'wrap'}}>
+              <span style={{fontSize:10,opacity:.55}}>⏱ {ep.dur}</span>
+              <span style={{fontSize:10,opacity:.55}}>▶️ {ep.plays.toLocaleString()} escuchas</span>
+              <span className={`pod-source-tag pod-src-${ep.src}`}>{ep.src==='spotify'?'Spotify':ep.src==='youtube'?'YouTube':ep.src==='anchor'?'Anchor':'RSS'}</span>
+            </div>
+          </div>
+        </div>
+        <div className="pod-player">
+          <div className="pod-progress" onClick={e=>{const r=e.currentTarget.getBoundingClientRect();setProgreso(Math.round(((e.clientX-r.left)/r.width)*100));}}>
+            <div className="pod-progress-fill" style={{width:progreso+'%'}}/>
+          </div>
+          <div className="pod-time"><span>{Math.floor(progreso/100*78)}:{String(Math.floor((progreso/100*4804)%60)).padStart(2,'0')}</span><span>{ep.dur}</span></div>
+          <div className="pod-controls" style={{marginTop:12}}>
+            <button className="pod-ctrl-btn" onClick={()=>setProgreso(p=>Math.max(0,p-5))}>⏮</button>
+            <button className="pod-ctrl-btn" onClick={()=>setProgreso(p=>Math.max(0,p-2))}>⏪</button>
+            <button className="pod-ctrl-play" onClick={togglePlay}>{playing?'⏸':'▶'}</button>
+            <button className="pod-ctrl-btn" onClick={()=>setProgreso(p=>Math.min(100,p+2))}>⏩</button>
+            <button className="pod-ctrl-btn" onClick={()=>abrirExterno(ep)}>↗</button>
+          </div>
+        </div>
+      </div>
+
+      <div className="sh"><div className="st">📻 Programas destacados</div><span className="sl">Ver todos →</span></div>
+      {POD_SHOWS.slice(0,3).map(s=>(
+        <div key={s.id} className="pod-show-card">
+          <div className="pod-show-art" style={{background:s.bg}}>{s.em}</div>
+          <div className="pod-show-body">
+            <div className="pod-show-title">{s.titulo}</div>
+            <div className="pod-show-host" style={{color:s.color}}>por {s.host} {s.verificado&&'✅'}</div>
+            <div className="pod-show-desc">{s.desc}</div>
+            <div className="pod-show-foot">
+              <span>{s.episodios} eps</span><span>·</span>
+              <span>{s.seguidores.toLocaleString()} seguidores</span>
+              <span className={`pod-source-tag pod-src-${s.src}`} style={{marginLeft:'auto'}}>{s.src}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div className="sh" style={{marginTop:4}}><div className="st">🆕 Últimos episodios</div></div>
+      {POD_EPISODES.slice(0,3).map(ep=>(
+        <div key={ep.id} className="pod-ep-card" onClick={()=>addToast({msg:`Reproduciendo: ${ep.titulo.slice(0,30)}…`,type:'ok'})}>
+          <div className="pod-ep-art-sm" style={{background:ep.showBg}}>{ep.em}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="pod-ep-title">{ep.titulo}</div>
+            <div className="pod-ep-meta">
+              <span>{ep.showTitle}</span><span>·</span><span>{ep.dur}</span><span>·</span><span>{ep.fecha}</span>
+              <span className={`pod-source-tag pod-src-${ep.src}`}>{ep.src}</span>
+            </div>
+          </div>
+          <button className="pod-ep-play" onClick={e=>{e.stopPropagation();addToast({msg:'▶️ Reproduciendo…',type:'ok'});sumar(1);}}>▶</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── PROGRAMAS ── */
+function PodProgramasTab({ sumar, addToast }) {
+  const [filtro, setFiltro] = useState('Todos');
+  const [seguidos, setSeguidos] = useState({});
+  const deportes = ['Todos','Fútbol','Rugby','Básquet','F1','Tenis'];
+  const filtrados = filtro==='Todos' ? POD_SHOWS : POD_SHOWS.filter(s=>s.deporte===filtro);
+  function seguir(s){
+    setSeguidos(f=>({...f,[s.id]:!f[s.id]}));
+    if(!seguidos[s.id]){ sumar(2); addToast({msg:`Siguiendo ${s.titulo} 🎙️`,type:'ok'}); }
+  }
+  return (
+    <div>
+      <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,scrollbarWidth:'none',paddingBottom:4}}>
+        {deportes.map(d=>(
+          <button key={d} onClick={()=>setFiltro(d)}
+            style={{flexShrink:0,padding:'4px 12px',borderRadius:20,background:filtro===d?'var(--purple)':'var(--white)',border:`1.5px solid ${filtro===d?'var(--purple)':'var(--br)'}`,color:filtro===d?'white':'var(--tx2)',fontSize:11,fontWeight:600,cursor:'pointer',transition:'.15s'}}>
+            {d}
+          </button>
+        ))}
+      </div>
+      {filtrados.map(s=>(
+        <div key={s.id} className="pod-show-card">
+          <div className="pod-show-art" style={{background:s.bg}}>{s.em}</div>
+          <div className="pod-show-body">
+            <div style={{display:'flex',alignItems:'flex-start',gap:6}}>
+              <div style={{flex:1}}>
+                <div className="pod-show-title">{s.titulo} {s.verificado&&'✅'}</div>
+                <div className="pod-show-host" style={{color:s.color}}>por {s.host}</div>
+              </div>
+              <button className="btn btn-sm" style={{flexShrink:0,background:seguidos[s.id]?'var(--purple)':'transparent',color:seguidos[s.id]?'white':'var(--purple)',borderColor:'var(--purple)',fontSize:10,padding:'3px 10px'}} onClick={()=>seguir(s)}>
+                {seguidos[s.id]?'✓ Siguiendo':'+ Seguir'}
+              </button>
+            </div>
+            <div className="pod-show-desc">{s.desc}</div>
+            <div className="pod-show-foot">
+              <span>⚽ {s.deporte}</span><span>·</span><span>{s.episodios} eps</span><span>·</span>
+              <span>{s.seguidores.toLocaleString()} seguidores</span>
+              <span className={`pod-source-tag pod-src-${s.src}`} style={{marginLeft:'auto'}}>{s.src}</span>
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="sh" style={{marginTop:6}}><div className="st" style={{color:'var(--sun)'}}>📡 Feeds RSS externos</div></div>
+      <div style={{background:'rgba(246,180,14,.06)',border:'1px solid rgba(246,180,14,.25)',borderRadius:'var(--r)',padding:'10px 14px',fontSize:12,color:'var(--tx2)',lineHeight:1.6}}>
+        Contenido de relleno mientras crece la comunidad propia. Se carga automáticamente desde los feeds de TyC Sports, ESPN Argentina y Radio La Red.
+        <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+          {POD_RSS_FEEDS.map(f=><span key={f.name} className="pod-source-tag pod-src-rss">{f.em} {f.name}</span>)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── EPISODIOS ── */
+function PodEpisodiosTab({ sumar, addToast }) {
+  const [items, setItems] = useState(POD_EPISODES);
+  const [filtro, setFiltro] = useState('Todos');
+  const shows = ['Todos',...new Set(POD_EPISODES.map(e=>e.showTitle))];
+  const filtrados = filtro==='Todos'?items:items.filter(e=>e.showTitle===filtro);
+  function like(id){
+    setItems(it=>it.map(e=>e.id===id?{...e,likes:e.likes+1}:e));
+    sumar(1); addToast({msg:'❤️ Like · +1 karma',type:'ok'});
+  }
+  return (
+    <div>
+      <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,scrollbarWidth:'none',paddingBottom:4}}>
+        {shows.map(s=>(
+          <button key={s} onClick={()=>setFiltro(s)}
+            style={{flexShrink:0,padding:'4px 11px',borderRadius:20,background:filtro===s?'var(--purple)':'var(--white)',border:`1.5px solid ${filtro===s?'var(--purple)':'var(--br)'}`,color:filtro===s?'white':'var(--tx2)',fontSize:11,fontWeight:600,cursor:'pointer',transition:'.15s',whiteSpace:'nowrap'}}>
+            {s}
+          </button>
+        ))}
+      </div>
+      {filtrados.map(ep=>(
+        <div key={ep.id} className="pod-ep-card">
+          <div className="pod-ep-art-sm" style={{background:ep.showBg}}>{ep.em}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="pod-ep-title">{ep.titulo}</div>
+            <div className="pod-ep-meta">
+              <span style={{color:ep.color,fontWeight:600}}>{ep.showTitle}</span>
+              <span>·</span><span>⏱ {ep.dur}</span><span>·</span><span>{ep.fecha}</span>
+            </div>
+            <div style={{fontSize:11,color:'var(--tx2)',marginTop:4,lineHeight:1.4}}>{ep.desc}</div>
+            <div style={{display:'flex',alignItems:'center',gap:8,marginTop:6}}>
+              <span style={{fontSize:10,color:'var(--tx3)'}}>▶️ {ep.plays.toLocaleString()}</span>
+              <div className="pod-ep-likes" onClick={()=>like(ep.id)}>
+                <Ic.Heart style={{width:11,height:11}}/><span>{ep.likes}</span>
+              </div>
+              <span className={`pod-source-tag pod-src-${ep.src}`} style={{marginLeft:'auto'}}>{ep.src}</span>
+              <button className="btn btn-sm" style={{fontSize:10,padding:'2px 8px',color:'var(--purple)',borderColor:'var(--purple)'}} onClick={()=>addToast({msg:'🔗 Link copiado',type:'ok'})}>Compartir</button>
+            </div>
+          </div>
+          <button className="pod-ep-play" onClick={()=>{addToast({msg:`▶️ ${ep.titulo.slice(0,25)}…`,type:'ok'});sumar(1);}}>▶</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── SUBIR EPISODIO ── */
+function PodSubirTab({ sumar, addToast, user }) {
+  const [paso, setPaso] = useState(1);
+  const [show, setShow] = useState({titulo:'',desc:'',deporte:'Fútbol',src:'spotify'});
+  const [ep, setEp] = useState({titulo:'',desc:'',url:'',dur:''});
+  const [misShows, setMisShows] = useState([]);
+  const [misEps, setMisEps] = useState([]);
+
+  function crearShow(){
+    if(!show.titulo.trim()){addToast({msg:'Poné un nombre al programa',type:'err'});return;}
+    setMisShows(s=>[{id:Date.now(),...show,episodios:0},...s]);
+    sumar(20); addToast({msg:`¡Programa "${show.titulo}" creado! +20 karma 🎙️`,type:'ok'});
+    setShow({titulo:'',desc:'',deporte:'Fútbol',src:'spotify'}); setPaso(2);
+  }
+  function subirEp(){
+    if(!ep.titulo.trim()||!ep.url.trim()){addToast({msg:'Completá título y URL del episodio',type:'err'});return;}
+    setMisEps(e=>[{id:Date.now(),...ep,fecha:'ahora',plays:0,likes:0},...e]);
+    sumar(15); addToast({msg:'¡Episodio publicado! +15 karma 🚀',type:'ok'});
+    setEp({titulo:'',desc:'',url:'',dur:''});
+  }
+  const srcs = [{id:'spotify',label:'Spotify',cls:'pod-src-spotify'},{id:'youtube',label:'YouTube',cls:'pod-src-youtube'},{id:'anchor',label:'Anchor / Buzzsprout',cls:'pod-src-anchor'},{id:'rss',label:'RSS Feed',cls:'pod-src-rss'}];
+  return (
+    <div>
+      <div style={{background:'linear-gradient(135deg,rgba(45,27,105,.1),rgba(76,29,149,.08))',border:'1.5px solid rgba(139,92,246,.3)',borderRadius:'var(--rl)',padding:16,marginBottom:16}}>
+        <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,color:'var(--purple)',marginBottom:6}}>🎙️ Tu espacio en Tribuna Libre</div>
+        <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.6}}>Publicá tu programa. Cualquier usuario registrado puede crear un show y subir episodios con links de Spotify, YouTube, Anchor o RSS.</div>
+      </div>
+
+      <div style={{display:'flex',gap:0,border:'1px solid var(--br)',borderRadius:'var(--r)',overflow:'hidden',marginBottom:16}}>
+        {['1 · Crear programa','2 · Subir episodio'].map((l,i)=>(
+          <div key={i} onClick={()=>setPaso(i+1)} style={{flex:1,padding:'9px',textAlign:'center',cursor:'pointer',background:paso===i+1?'var(--purple)':'var(--white)',color:paso===i+1?'white':'var(--tx2)',fontFamily:'var(--fd)',fontSize:11,fontWeight:700,transition:'.15s',borderRight:i===0?'1px solid var(--br)':'none'}}>{l}</div>
+        ))}
+      </div>
+
+      {paso===1&&(
+        <div className="pub-form">
+          <div style={{marginBottom:10}}><label className="fl">Nombre del programa</label><input className="fi" value={show.titulo} onChange={e=>setShow(s=>({...s,titulo:e.target.value}))} placeholder="Ej: El Maul · Tribuna al Palo · Básquet Total"/></div>
+          <div style={{marginBottom:10}}><label className="fl">Descripción</label><textarea className="fi" value={show.desc} onChange={e=>setShow(s=>({...s,desc:e.target.value}))} placeholder="De qué trata tu programa, a quién va dirigido, frecuencia de publicación…" style={{minHeight:70,resize:'vertical'}}/></div>
+          <div style={{marginBottom:10}}><label className="fl">Deporte principal</label>
+            <select className="fi" style={{background:'var(--cel-xl)'}} value={show.deporte} onChange={e=>setShow(s=>({...s,deporte:e.target.value}))}>
+              {['Fútbol','Rugby','Básquet','F1','Tenis','Hockey','Boxeo','Multi-deporte'].map(d=><option key={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{marginBottom:14}}>
+            <label className="fl">Plataforma de alojamiento</label>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:7}}>
+              {srcs.map(s=>(
+                <div key={s.id} onClick={()=>setShow(sh=>({...sh,src:s.id}))} style={{border:`1.5px solid ${show.src===s.id?'var(--purple)':'var(--br)'}`,borderRadius:'var(--rs)',padding:'8px 10px',cursor:'pointer',background:show.src===s.id?'rgba(139,92,246,.08)':'var(--white)',transition:'.15s',display:'flex',alignItems:'center',gap:7}}>
+                  <span className={`pod-source-tag ${s.cls}`}>{s.label}</span>
+                  {show.src===s.id&&<span style={{marginLeft:'auto',color:'var(--purple)',fontSize:12}}>✓</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+          <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'11px',fontFamily:'var(--fd)',fontWeight:700}} onClick={crearShow}>Crear programa 🎙️</button>
+        </div>
+      )}
+
+      {paso===2&&(
+        <div className="pub-form">
+          {misShows.length===0&&<div style={{background:'rgba(246,180,14,.08)',border:'1px solid rgba(246,180,14,.3)',borderRadius:'var(--rs)',padding:'10px 12px',marginBottom:14,fontSize:12,color:'#B7770D'}}>⚠️ Primero creá tu programa en el paso 1.</div>}
+          {misShows.length>0&&<div style={{background:'rgba(139,92,246,.08)',border:'1px solid rgba(139,92,246,.3)',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:12,fontSize:11,color:'var(--purple)',fontWeight:600}}>🎙️ Publicando en: {misShows[0].titulo}</div>}
+          <div style={{marginBottom:10}}><label className="fl">Título del episodio</label><input className="fi" value={ep.titulo} onChange={e=>setEp(p=>({...p,titulo:e.target.value}))} placeholder="Ej: #15 — Entrevista con Facundo Campazzo"/></div>
+          <div style={{marginBottom:10}}><label className="fl">URL del episodio</label><input className="fi" value={ep.url} onChange={e=>setEp(p=>({...p,url:e.target.value}))} placeholder="https://open.spotify.com/episode/... o YouTube, Anchor…"/></div>
+          <div style={{marginBottom:10}}><label className="fl">Duración</label><input className="fi" value={ep.dur} onChange={e=>setEp(p=>({...p,dur:e.target.value}))} placeholder="Ej: 1:24:30 o 45:00"/></div>
+          <div style={{marginBottom:14}}><label className="fl">Descripción del episodio</label><textarea className="fi" value={ep.desc} onChange={e=>setEp(p=>({...p,desc:e.target.value}))} placeholder="De qué trata, invitados, temas principales…" style={{minHeight:70,resize:'vertical'}}/></div>
+          <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'11px',fontFamily:'var(--fd)',fontWeight:700}} onClick={subirEp}>Publicar episodio 🚀</button>
+        </div>
+      )}
+
+      {misEps.length>0&&(
+        <div style={{marginTop:18}}>
+          <div className="sh"><div className="st" style={{color:'var(--green)'}}>✅ Tus episodios publicados</div></div>
+          {misEps.map(e=>(
+            <div key={e.id} className="pod-ep-card" style={{border:'1.5px solid var(--purple)'}}>
+              <div className="pod-ep-art-sm" style={{background:'rgba(139,92,246,.1)'}}>🎙️</div>
+              <div style={{flex:1}}><div className="pod-ep-title">{e.titulo}</div><div className="pod-ep-meta"><span>{e.dur||'—'}</span><span>·</span><span>{e.fecha}</span></div></div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── RANKING ── */
+function PodRankingTab() {
+  const topShows = [...POD_SHOWS].sort((a,b)=>b.seguidores-a.seguidores);
+  const topEps   = [...POD_EPISODES].sort((a,b)=>b.plays-a.plays);
+  return (
+    <div>
+      <div className="sh"><div className="st">🏆 Top programas de la semana</div></div>
+      {topShows.map((s,i)=>(
+        <div key={s.id} className="pod-rank-item">
+          <span className="pod-rank-num" style={{color:i<3?['var(--sun)','var(--tx3)','#CD7F32'][i]:'var(--tx3)'}}>{i+1}</span>
+          <div className="pod-rank-art" style={{background:s.bg}}>{s.em}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="pod-rank-name">{s.titulo} {s.verificado&&'✅'}</div>
+            <div className="pod-rank-sub" style={{color:s.color}}>por {s.host}</div>
+          </div>
+          <span className="pod-rank-plays">{s.seguidores.toLocaleString()} seg.</span>
+        </div>
+      ))}
+      <div className="sh" style={{marginTop:16}}><div className="st">🎧 Episodios más escuchados</div></div>
+      {topEps.map((ep,i)=>(
+        <div key={ep.id} className="pod-rank-item">
+          <span className="pod-rank-num" style={{color:i<3?['var(--sun)','var(--tx3)','#CD7F32'][i]:'var(--tx3)'}}>{i+1}</span>
+          <div className="pod-rank-art" style={{background:ep.showBg}}>{ep.em}</div>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="pod-rank-name" style={{fontSize:12}}>{ep.titulo}</div>
+            <div style={{fontSize:10,color:ep.color,fontWeight:600,textTransform:'uppercase',letterSpacing:.4}}>{ep.showTitle}</div>
+          </div>
+          <span className="pod-rank-plays">{ep.plays.toLocaleString()} ▶️</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── COMUNIDAD PODCAST ── */
+function PodComunidadTab({ sumar, addToast }) {
+  const [selEp, setSelEp] = useState(POD_EPISODES[0]);
+  const [comentarios, setComentarios] = useState([
+    {id:1,u:'GonzaloTL',av:'GT',color:'#E8262A',txt:'El análisis de Campazzo es impresionante. Lucas sabe muchísimo de básquet. 🏀',time:'hace 20 min'},
+    {id:2,u:'PumasFan',av:'PF',color:'#16A34A',txt:'Episodio de primera. El vestuario es el mejor podcast deportivo del país sin dudas.',time:'hace 1 hora'},
+  ]);
+  const [txt, setTxt] = useState('');
+  const [poll, setPoll] = useState({q:'¿Coincidís con el análisis del episodio?',opts:['Totalmente','Parcialmente','Para nada'],vs:[48,31,12]});
+  const [voted, setVoted] = useState(null);
+  function votar(i){ if(voted!==null)return; setPoll(p=>({...p,vs:p.vs.map((v,j)=>j===i?v+1:v)})); setVoted(i); sumar(3); addToast({msg:'Voto registrado +3 karma',type:'ok'}); }
+  function enviar(){
+    if(!txt.trim()) return;
+    setComentarios(c=>[...c,{id:Date.now(),u:'Vos',av:'V',color:'#4A90D9',txt,time:'ahora'}]);
+    setTxt(''); sumar(2); addToast({msg:'+2 karma por comentar ✓',type:'ok'});
+  }
+  const total = poll.vs.reduce((a,b)=>a+b,0);
+  return (
+    <div>
+      <div className="sh"><div className="st">💬 Episodio en debate</div></div>
+      <div style={{display:'flex',gap:7,overflowX:'auto',marginBottom:14,scrollbarWidth:'none',paddingBottom:4}}>
+        {POD_EPISODES.map(ep=>(
+          <div key={ep.id} onClick={()=>setSelEp(ep)} style={{flexShrink:0,padding:'5px 11px',borderRadius:20,background:selEp.id===ep.id?'var(--purple)':'var(--white)',border:`1.5px solid ${selEp.id===ep.id?'var(--purple)':'var(--br)'}`,color:selEp.id===ep.id?'white':'var(--tx2)',fontSize:10,fontWeight:600,cursor:'pointer',transition:'.15s',whiteSpace:'nowrap'}}>
+            {ep.em} {ep.titulo.slice(0,22)}…
+          </div>
+        ))}
+      </div>
+      <div style={{background:'rgba(139,92,246,.07)',border:'1px solid rgba(139,92,246,.2)',borderRadius:'var(--r)',padding:'10px 13px',marginBottom:14}}>
+        <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,color:'var(--purple)',marginBottom:2}}>{selEp.showTitle}</div>
+        <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',marginBottom:3}}>{selEp.titulo}</div>
+        <div style={{fontSize:10,color:'var(--tx3)'}}>{selEp.dur} · {selEp.plays.toLocaleString()} escuchas · ❤️ {selEp.likes}</div>
+      </div>
+      <div className="sh"><div className="st">🗳️ Encuesta rápida</div></div>
+      <div className="card cp" style={{marginBottom:14}}>
+        <div style={{fontSize:13,fontWeight:600,color:'var(--tx)',marginBottom:10}}>{poll.q}</div>
+        {poll.opts.map((o,i)=>{
+          const pct = total?Math.round(poll.vs[i]/total*100):0;
+          return (
+            <div key={i} style={{marginBottom:8}}>
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:12,marginBottom:3}}><span style={{fontWeight:voted===i?700:400,color:voted===i?'var(--purple)':'var(--tx2)'}}>{o}</span><span style={{color:'var(--purple)',fontWeight:600}}>{pct}%</span></div>
+              <div style={{background:'var(--br)',borderRadius:4,height:6,overflow:'hidden',cursor:voted===null?'pointer':'default'}} onClick={()=>votar(i)}>
+                <div style={{height:'100%',width:pct+'%',background:'var(--purple)',borderRadius:4,transition:'.4s'}}/>
+              </div>
+            </div>
+          );
+        })}
+        <div style={{fontSize:10,color:'var(--tx3)',marginTop:6}}>{total} votos{voted!==null&&' · Ya votaste'}</div>
+      </div>
+      <div className="sh"><div className="st">Comentarios</div></div>
+      <div className="card cp" style={{marginBottom:14}}>
+        {comentarios.map(c=>(
+          <div key={c.id} style={{display:'flex',gap:9,marginBottom:11,paddingBottom:11,borderBottom:'1px solid var(--br)'}}>
+            <div style={{width:28,height:28,borderRadius:'50%',background:c.color,display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:11,color:'white',flexShrink:0}}>{c.av}</div>
+            <div><div style={{fontSize:11,fontWeight:700,color:'var(--tx)',marginBottom:2}}>{c.u} <span style={{fontWeight:400,color:'var(--tx3)',fontSize:10}}>· {c.time}</span></div><div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.5}}>{c.txt}</div></div>
+          </div>
+        ))}
+        <div style={{display:'flex',gap:8,marginTop:4}}>
+          <input className="fi" style={{flex:1}} value={txt} onChange={e=>setTxt(e.target.value)} onKeyDown={e=>e.key==='Enter'&&enviar()} placeholder="Tu comentario sobre el episodio…"/>
+          <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',padding:'7px 14px'}} onClick={enviar}><Ic.Send style={{width:13,height:13}}/></button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ══════ MÓDULO IA — genera contenido diario sobre deporte y periodismo ══════ */
 function IAModuleWidget() {
   const [content, setContent] = useState(null);
@@ -3701,6 +4201,7 @@ function RightSidebar({ onNav, posts=[] }) {
             {id:'copa',     em:'🌎',l:'Copa del Mundo',     c:'var(--cel-d)', bg:'var(--cel-xl)'},
             {id:'revista',  em:'🌟',l:'La Tribu Descubre',  c:'#9D174D',      bg:'#FDF2F8'},
             {id:'red',      em:'🌐',l:'Red de Periodismo',  c:'var(--teal)',  bg:'rgba(8,145,178,.07)'},
+            {id:'podcast',  em:'🎙️',l:'Podcast',            c:'var(--purple)',bg:'rgba(139,92,246,.07)'},
           ].map((s,i) => (
             <div key={i} onClick={()=>onNav(s.id)}
               style={{background:s.bg,border:`1px solid ${s.c}22`,borderRadius:'var(--rs)',padding:'8px 11px',cursor:'pointer',display:'flex',alignItems:'center',gap:8,transition:'.15s'}}
@@ -3758,6 +4259,7 @@ const NAV = [
   {id:'prode',     l:'La Tribu Predice',      icon:'Prode'},
   {id:'revista',   l:'La Tribu Descubre',     icon:'Rev'},
   {id:'red',       l:'Red de Periodismo',     icon:'Net'},
+  {id:'podcast',   l:'Podcast',               icon:'Mic'},
   {id:'var',       l:'El VAR',                icon:'Check'},
   {id:'profile',   l:'Mi perfil',             icon:'Profile'},
 ];
@@ -3776,6 +4278,7 @@ const FULL_MOBILE_MENU = [
   {id:'prode',     l:'La Tribu Predice',     em:'🏆', icon:'Prode'},
   {id:'revista',   l:'La Tribu Descubre',    em:'🌟', icon:'Rev'},
   {id:'red',       l:'Red de Periodismo',    em:'🌐', icon:'Net'},
+  {id:'podcast',   l:'Podcast',              em:'🎙️', icon:'Mic'},
   {id:'live',      l:'En Vivo',              em:'🔴', icon:'Live'},
   {id:'var',       l:'El VAR',               em:'💬', icon:'Forum'},
   {id:'profile',   l:'Mi Perfil',            em:'👤', icon:'Profile'},
@@ -3924,6 +4427,7 @@ function App() {
             {page==='copa'      && <CopaPage/>}
             {page==='revista'   && <RevistaPage user={user} addToast={addToast}/>}
             {page==='red'       && <RedPeriodismoPage addToast={addToast}/>}
+            {page==='podcast'   && <PodcastPage addToast={addToast} user={user}/>}
             {page==='live'      && (
               <div>
                 <div className="sh"><div className="st" style={{color:'var(--red)'}}><div className="ldot"/>En Vivo</div></div>
