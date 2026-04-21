@@ -4054,7 +4054,8 @@ function AuthModal({ onClose, onLogin, addToast }) {
     if (!window.__supabase) { addToast({msg:'Supabase no configurado — usá email',type:'err'}); return; }
     setLoading(true); setErr('');
     try {
-      const { data, error } = await window.__supabase.auth.signInWithOAuth({ provider:'google', options:{redirectTo:window.location.origin} });
+      const _safeOrigin = (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('chrome-error') && window.location.protocol !== 'file:') ? window.location.href.split('?')[0] : 'https://tribunalibre-arg.github.io/home/';
+      const { data, error } = await window.__supabase.auth.signInWithOAuth({ provider:'google', options:{redirectTo:_safeOrigin} });
       if (error) throw error;
       addToast({msg:'¡Redirigiendo a Google...! 🇦🇷',type:'ok'}); onClose();
     } catch(e) { setErr(e.message||'Error con Google'); }
