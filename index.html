@@ -4329,12 +4329,35 @@ function App() {
   const { toasts, add: addToast } = useToasts();
 
   useEffect(() => {
-    const token = ls.get('tl_token');
-    if (!token) return;
-    fetch(`${API}/api/auth/me`, { headers:{ Authorization:`Bearer ${token}` } })
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d?.user) setUser({...d.user, isGuest:false}); })
-      .catch(() => ls.del('tl_token'));
+    function applySupabaseUser(sbUser) {
+      if (!sbUser) return;
+      const displayName =
+        sbUser.user_metadata?.full_name ||
+        sbUser.user_metadata?.name ||
+        sbUser.user_metadata?.displayName ||
+        sbUser.email?.split('@')[0] ||
+        'Usuario';
+      setUser({ displayName, email: sbUser.email, rep: 0, isGuest: false });
+      setAuthOpen(false);
+    }
+
+    if (window.__supabase) {
+      window.__supabase.auth.getSession().then(({ data }) => {
+        if (data?.session?.user) applySupabaseUser(data.session.user);
+      });
+      const { data: listener } = window.__supabase.auth.onAuthStateChange((_event, session) => {
+        if (session?.user) applySupabaseUser(session.user);
+        else if (_event === 'SIGNED_OUT') setUser({ isGuest: true });
+      });
+      return () => listener?.subscription?.unsubscribe();
+    } else {
+      const token = ls.get('tl_token');
+      if (!token) return;
+      fetch(`${API}/api/auth/me`, { headers:{ Authorization:`Bearer ${token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.user) setUser({...d.user, isGuest:false}); })
+        .catch(() => ls.del('tl_token'));
+    }
   }, []);
 
   function nav(p) { setPage(p); setArticle(null); window.scrollTo(0,0); }
