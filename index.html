@@ -21,7 +21,7 @@ window.SUPABASE_ANON = 'sb_publishable_uGtX_3HBT1Aduy4s2N5WrA_3QjonanT';
 // ANTHROPIC API KEY — necesaria para Trivia IA y módulo IA
 // Obtené la tuya en: https://console.anthropic.com/keys
 // ═══════════════════════════════════════════════════════════
-window.ANTHROPIC_KEY = 'TU_API_KEY_AQUI';
+window.ANTHROPIC_KEY = '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';
 
 window.__supabase = null;  // se inicializa cuando cargue el SDK
 
@@ -67,11 +67,11 @@ window.RSS2JSON_KEY = '';
 
 // Feeds que SÍ aceptan proxies CORS gratuitos
 window.RSS_FEEDS = [
-  { name: 'BBC Deportes', url: 'https://feeds.bbci.co.uk/sport/rss.xml' },
-  { name: 'ESPN',         url: 'https://www.espn.com/espn/rss/news' },
-  { name: 'Marca',        url: 'https://www.marca.com/rss/portada.xml' },
-  { name: 'AS Fútbol',    url: 'https://as.com/rss/tags/futbol.xml' },
-  { name: 'Sky Sports',   url: 'https://www.skysports.com/rss/12040' },
+  { name: 'Infobae Deportes', url: 'https://www.infobae.com/feeds/rss/deportes/' },
+  { name: 'TyC Sports',       url: 'https://www.tycsports.com/rss.xml' },
+  { name: 'Olé',              url: 'https://www.ole.com.ar/rss/news.xml' },
+  { name: 'La Nación Dep.',   url: 'https://www.lanacion.com.ar/arc/outboundfeeds/rss/categoria/deportes/' },
+  { name: 'Clarín Deportes',  url: 'https://www.clarin.com/rss/deportes/' },
 ];
 
 // Extrae la primera imagen de HTML de contenido RSS
@@ -831,15 +831,20 @@ const CM_TOPICOS = [
 ];
 
 const KARMA_ACCIONES = [
-  {accion:'Publicar contenido',pts:10},{accion:'Publicación con 10+ likes',pts:15},
-  {accion:'Dar like a un colega',pts:2},{accion:'Ofrecer colaboración',pts:8},
-  {accion:'Completar perfil',pts:20},{accion:'Dar/pedir mentoría',pts:12},
-  {accion:'Nota en tópico trending',pts:25},{accion:'Racha 7 días',pts:30},
+  {accion:'Publicar contenido',pts:8},{accion:'Publicación con 10+ likes',pts:20},
+  {accion:'Publicación con 25+ likes',pts:35},{accion:'Dar like a un colega',pts:1},
+  {accion:'Comentar una nota',pts:2},{accion:'Ofrecer colaboración',pts:12},
+  {accion:'Completar perfil',pts:30},{accion:'Dar/pedir mentoría',pts:18},
+  {accion:'Nota en tópico trending',pts:40},{accion:'Racha 7 días',pts:50},
+  {accion:'Subir episodio de podcast',pts:15},{accion:'Seguir un programa',pts:2},
 ];
 const KARMA_NIVELES = [
-  {nombre:'🎒 Pasante',min:0,max:49},{nombre:'✏️ Cronista',min:50,max:149},
-  {nombre:'📝 Redactor',min:150,max:299},{nombre:'🖊️ Editor',min:300,max:599},
-  {nombre:'⭐ Referente',min:600,max:Infinity},
+  {nombre:'🎒 Pasante',   min:0,    max:99},
+  {nombre:'✏️ Cronista',  min:100,  max:349},
+  {nombre:'📝 Redactor',  min:350,  max:799},
+  {nombre:'🖊️ Editor',    min:800,  max:1799},
+  {nombre:'⭐ Referente', min:1800, max:3999},
+  {nombre:'🏆 Leyenda',   min:4000, max:Infinity},
 ];
 function getKarmaLevel(pts){return KARMA_NIVELES.find(l=>pts>=l.min&&pts<=l.max)||KARMA_NIVELES[0];}
 function getKarmaProgress(pts){
@@ -3068,14 +3073,33 @@ function RedPeriodismoPage({ addToast }) {
 
 /* ══════ RED FEED TAB ══════ */
 function RedFeedTab({notas, addToast, sumar}){
-  const [items, setItems] = useState(notas);
+  const [items, setItems] = useState([]);
+  const [cargando, setCargando] = useState(true);
   const [filtro, setFiltro] = useState('Todos');
+  const sb = window.__supabase;
   const formatos = ['Todos','Nota','Entrevista','Video','Columna','Fotografía','Podcast'];
+  const emMap = {Nota:'📰',Entrevista:'🎤',Video:'📹',Columna:'✍️',Fotografía:'📸',Podcast:'🎙️'};
+  useEffect(()=>{
+    async function cargar(){
+      setCargando(true);
+      if(sb){
+        try{
+          const {data,error} = await sb.from('red_notas').select('*').order('created_at',{ascending:false}).limit(30);
+          if(!error && data && data.length>0){
+            setItems(data.map(n=>({id:n.id,formato:n.formato,em:emMap[n.formato]||'📰',deporte:n.deporte,titulo:n.titulo,resumen:n.resumen,autor:n.autor,autorEm:'✍️',fecha:new Date(n.created_at).toLocaleDateString('es-AR'),lecturas:n.lecturas||0,likes:n.likes||0,verificado:false})));
+            setCargando(false);return;
+          }
+        }catch(e){console.warn('RED feed:',e.message);}
+      }
+      setItems(notas);setCargando(false);
+    }
+    cargar();
+  },[]);
   const filtrados = filtro==='Todos'?items:items.filter(n=>n.formato===filtro);
   function like(id){
-    setItems(it=>it.map(n=>n.id===id?{...n,likes:n.likes+1}:n));
-    sumar('like',2);
-    addToast({msg:'👍 Like sumado · +2 karma',type:'ok'});
+    setItems(it=>it.map(n=>n.id===id?{...n,likes:(n.likes||0)+1}:n));
+    sumar('like',1);
+    addToast({msg:'👍 +1 karma',type:'ok'});
   }
   return (
     <div>
@@ -3114,16 +3138,27 @@ function RedPublicarTab({addToast, sumar}){
   const [form, setForm] = useState({titulo:'',resumen:'',deporte:'Fútbol',autor:''});
   const [publicadas, setPublicadas] = useState([]);
   const formatos = [{em:'📰',n:'Nota'},{em:'🎤',n:'Entrevista'},{em:'📹',n:'Video'},{em:'✍️',n:'Columna'},{em:'📸',n:'Fotografía'},{em:'🎙️',n:'Podcast'}];
-  function publicar(){
+  async function publicar(){
     if(!formato){addToast({msg:'Elegí un formato primero',type:'err'});return;}
     if(!form.titulo.trim()||!form.resumen.trim()){addToast({msg:'Completá título y resumen',type:'err'});return;}
     const nueva={id:Date.now(),formato,em:formatos.find(f=>f.n===formato)?.em||'📰',deporte:form.deporte,titulo:form.titulo,resumen:form.resumen,autor:form.autor||'Vos',fecha:'ahora',lecturas:0,likes:0};
     setPublicadas(p=>[nueva,...p]);
     setForm({titulo:'',resumen:'',deporte:'Fútbol',autor:''});
     setFormato('');
-    sumar('publicar',10);
-    addToast({msg:'¡Nota publicada! +10 karma 🚀',type:'ok'});
-  }
+    const sb = window.__supabase;
+    if(sb){
+      try{
+        const {data:sess} = await sb.auth.getSession();
+        const uid = sess?.session?.user?.id;
+        const autorName = form.autor.trim() || sess?.session?.user?.user_metadata?.full_name || 'Colaborador';
+        const {error} = await sb.from('red_notas').insert({user_id:uid||null,formato,deporte:form.deporte,titulo:form.titulo,resumen:form.resumen,autor:autorName,lecturas:0,likes:0});
+        if(error) throw error;
+        addToast({msg:'¡Nota publicada en la RED! +8 karma 🚀',type:'ok'});
+      }catch(e){addToast({msg:'Error al publicar: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Publicado localmente! Conectá Supabase para que sea visible para todos 🚀',type:'ok'});
+    }
+    sumar('publicar',8);
   return (
     <div>
       <div className="sh"><div className="st">Elegí el formato</div></div>
