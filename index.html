@@ -31,7 +31,7 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
     return;
   }
   var s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.src = 'https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.min.js';
   s.onload = function() {
     try {
       window.__supabase = window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON);
@@ -51,7 +51,14 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
       console.warn('Supabase no disponible:', e.message);
     }
   };
-  s.onerror = function() { console.warn('Supabase SDK no cargó'); };
+  s.onerror = function() {
+    console.warn('Supabase SDK no cargó (unpkg). Reintentando con jsdelivr...');
+    var s2 = document.createElement('script');
+    s2.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+    s2.onload = s.onload;
+    s2.onerror = function() { console.warn('Supabase SDK no disponible — modo sin autenticación.'); };
+    document.head.appendChild(s2);
+  };
   document.head.appendChild(s);
 })();
 </script>
@@ -73,6 +80,59 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 // FALLBACK: 3 proxies CORS + parsing XML propio
 // ═══════════════════════════════════════════════════════════
 window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá tu key de rss2json.com (opcional pero recomendado)
+
+// ── GNews API — imágenes reales garantizadas ─────────────────────────────
+// Registrate GRATIS en https://gnews.io → Plan Free = 100 req/día
+// Devuelve el campo "image" directamente en cada artículo, sin proxies.
+window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key de gnews.io acá
+
+window.fetchGNews = async function() {
+  const key = window.GNEWS_KEY;
+  if (!key) return [];  // sin key, saltar silenciosamente
+
+  const CACHE_KEY = 'tl_gnews';
+  const CACHE_TTL = 15 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length)
+        return data;
+    }
+  } catch(e) {}
+
+  const abort = ms => { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; };
+  const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+  const fetchT  = (url, ms) => Promise.race([fetch(url), timeout(ms)]);
+  const CAT_MAP = { sports: 'Deportes' };
+
+  try {
+    // GNews permite CORS desde el browser directamente
+    const url = `https://gnews.io/api/v4/search?q=deportes+Argentina&lang=es&country=ar&max=20&apikey=${key}`;
+    const resp = await fetchT(url, 12000);
+    if (!resp.ok) throw new Error(`GNews HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (!Array.isArray(json.articles)) throw new Error('GNews: sin artículos');
+
+    const items = json.articles.map((a, i) => ({
+      _id:         'gn_' + i + '_' + (a.url || '').slice(-20),
+      title:       a.title || '',
+      excerpt:     (a.description || '').slice(0, 220),
+      publishedAt: a.publishedAt || new Date().toISOString(),
+      coverImage:  a.image || null,           // ← imagen real, siempre presente
+      cat:         'Deportes',
+      category:    'Deportes',
+      meta:        { sourceName: a.source?.name || 'GNews', sourceUrl: a.url || '#' }
+    })).filter(a => a.title);
+
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
+    console.log(`GNews ✓ (${items.length} artículos con imagen)`);
+    return items;
+  } catch(e) {
+    console.warn('GNews ✗:', e.message);
+    return [];
+  }
+};
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
 window.RSS_FEEDS = [
@@ -142,7 +202,8 @@ window.fetchRSSFeed = async function(feedUrl, sourceName) {
   const cacheKey  = 'tl_rss_' + sourceName.replace(/\W/g, '_');
 
   // Helpers internos
-  const abort = ms => { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; };
+  const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+  const fetchT  = (url, ms) => Promise.race([fetch(url), timeout(ms)]);
   const save  = items => { try { localStorage.setItem(cacheKey, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {} };
   const stale = () => { try { const r = localStorage.getItem(cacheKey); if (r) { const { data } = JSON.parse(r); if (Array.isArray(data) && data.length) return data; } } catch(e) {} return []; };
 
@@ -161,8 +222,8 @@ window.fetchRSSFeed = async function(feedUrl, sourceName) {
   // 2 ▸ rss2json — primario (JSON, thumbnail resuelto automáticamente)
   try {
     const key    = window.RSS2JSON_KEY || '';
-    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20${key ? '&api_key=' + key : ''}`;
-    const resp   = await fetch(apiUrl, { signal: abort(10000) });
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20&full_content=1${key ? '&api_key=' + key : ''}`;
+    const resp   = await fetchT(apiUrl, 10000);
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const json  = await resp.json();
     const items = parseRss2Json(json, sourceName);
@@ -181,7 +242,7 @@ window.fetchRSSFeed = async function(feedUrl, sourceName) {
   ];
   for (let i = 0; i < proxies.length; i++) {
     try {
-      const resp = await fetch(proxies[i](feedUrl), { signal: abort(10000) });
+      const resp = await fetchT(proxies[i](feedUrl), 10000);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const items = parseRSSXml(await resp.text(), sourceName);
       save(items);
@@ -196,6 +257,55 @@ window.fetchRSSFeed = async function(feedUrl, sourceName) {
   const staleData = stale();
   if (staleData.length) console.warn(`RSS [${sourceName}] usando caché vencida (${staleData.length} items)`);
   return staleData;
+};
+
+// ── OG Image Enrichment ──────────────────────────────────────────────────
+// Google News RSS no incluye imágenes directamente. Esta función
+// obtiene la OG image de cada artículo vía proxy CORS y las inyecta
+// progresivamente (onUpdate se llama por lote a medida que llegan).
+window.enrichArticlesWithImages = async function(posts, onUpdate) {
+  if (!posts || !posts.length) return;
+  const needImg = posts.filter(p => !p.coverImage && p.meta?.sourceUrl && p.meta.sourceUrl !== '#');
+  if (!needImg.length) return;
+
+  const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+  const fetchT  = (url, ms) => Promise.race([fetch(url), timeout(ms)]);
+  const PROXY = url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+  const OG_RE = /<meta[^>]+(?:property=["']og:image["'][^>]+content=["']([^"']+)["']|content=["']([^"']+)["'][^>]+property=["']og:image["'])/i;
+  const TWIT_RE = /<meta[^>]+(?:name=["']twitter:image["'][^>]+content=["']([^"']+)["']|content=["']([^"']+)["'][^>]+name=["']twitter:image["'])/i;
+
+  async function getOgImg(url) {
+    const ck = 'og_' + encodeURIComponent(url).slice(-80);
+    try {
+      const hit = localStorage.getItem(ck);
+      if (hit !== null) return hit || null; // '' = ya se intentó, sin imagen
+    } catch(e) {}
+    let imgUrl = null;
+    try {
+      const resp = await fetchT(PROXY(url), 8000);
+      if (!resp.ok) throw new Error('proxy ' + resp.status);
+      const html = await resp.text();
+      const m = html.match(OG_RE) || html.match(TWIT_RE);
+      if (m) imgUrl = (m[1] || m[2] || '').trim() || null;
+      // Validar que no sea un data: URL ni un path relativo
+      if (imgUrl && (imgUrl.startsWith('data:') || !imgUrl.startsWith('http'))) imgUrl = null;
+    } catch(e) {
+      console.log('OG fetch fail:', url, e.message);
+    }
+    try { localStorage.setItem(ck, imgUrl || ''); } catch(e) {}
+    return imgUrl;
+  }
+
+  // Limitar a los primeros 12 artículos sin imagen, en lotes de 3
+  const TARGET = needImg.slice(0, 12);
+  const BATCH  = 3;
+  for (let i = 0; i < TARGET.length; i += BATCH) {
+    const batch   = TARGET.slice(i, i + BATCH);
+    const results = await Promise.all(batch.map(p => getOgImg(p.meta.sourceUrl)));
+    const updates = {};
+    batch.forEach((p, j) => { if (results[j]) updates[p._id] = results[j]; });
+    if (Object.keys(updates).length > 0) onUpdate(updates);
+  }
 };
 </script>
 
@@ -974,13 +1084,20 @@ function useNews(page=1, cat='', search='') {
     const safe = (fn) => (...args) => { if (!unmounted) fn(...args); };
     setState(s => ({ ...s, loading: true }));
 
-    Promise.all(
-      (window.RSS_FEEDS || []).map(f =>
+    Promise.all([
+      // GNews primero (tiene imágenes reales)
+      (window.fetchGNews ? window.fetchGNews() : Promise.resolve([])),
+      // RSS feeds en paralelo
+      ...((window.RSS_FEEDS || []).map(f =>
         window.fetchRSSFeed(f.url, f.name).then(items => ({ name: f.name, count: items.length, items }))
-      )
-    ).then(results => {
+      ))
+    ]).then(([gnewsItems, ...results]) => {
       const feedStatus = results.map(r => ({ name: r.name, count: r.count }));
-      let allPosts = results.flatMap(r => r.items).sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
+      const rssItems   = results.flatMap(r => r.items);
+      // Combinar: GNews (con imagen) + RSS, deduplicar por título similar
+      const gnewsTitles = new Set(gnewsItems.map(a => a.title.slice(0,40).toLowerCase()));
+      const dedupRss    = rssItems.filter(a => !gnewsTitles.has(a.title.slice(0,40).toLowerCase()));
+      let allPosts = [...gnewsItems, ...dedupRss].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
       const limit = 18;
@@ -989,6 +1106,13 @@ function useNews(page=1, cat='', search='') {
       const pagePosts = allPosts.slice((page-1)*limit, page*limit);
       if (pagePosts.length > 0) {
         safe(setState)({ posts: pagePosts, total, pages, loading: false, fromApi: true, feedStatus });
+        // Enriquecer artículos sin imagen con OG images de forma progresiva
+        window.enrichArticlesWithImages && window.enrichArticlesWithImages(pagePosts, (updates) => {
+          safe(setState)(s => ({
+            ...s,
+            posts: s.posts.map(p => updates[p._id] ? { ...p, coverImage: updates[p._id] } : p)
+          }));
+        });
       } else {
         const filtered = cat ? STATIC_NEWS.filter(n => n.cat===cat) : STATIC_NEWS;
         safe(setState)({ posts: filtered, total: filtered.length, pages: 1, loading: false, fromApi: false, feedStatus });
@@ -1031,8 +1155,16 @@ function Poll({ poll }) {
   );
 }
 
+/* ══════ HeroImg — fallback correcto cuando la imagen falla ══════ */
+function HeroImg({ src, alt, emoji }) {
+  const [failed, setFailed] = useState(false);
+  if (!src || failed) return <span style={{fontSize:80}}>{emoji}</span>;
+  return <img src={src} alt={alt} onError={()=>setFailed(true)}/>;
+}
+
 function NewsCard({ post, onClick }) {
   const [lk, setLk] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
   const cat = post.category || post.cat || 'Deportes';
   const em  = CAT_EMOJI[cat] || '📰';
   const ago = (() => {
@@ -1042,11 +1174,12 @@ function NewsCard({ post, onClick }) {
     if (diff < 1440) return `Hace ${Math.floor(diff/60)}h`;
     return d.toLocaleDateString('es-AR');
   })();
+  const showImg = post.coverImage && !imgFailed;
   return (
     <div className="nc" onClick={onClick}>
       <div className="nc-img big">
-        {post.coverImage && <img src={post.coverImage} alt={post.title} loading="lazy" onError={e=>{e.target.style.display='none';e.target.nextElementSibling.style.display='flex';}}/>}
-        <div className="nc-em" style={{display:post.coverImage?'none':'flex'}}>{em}</div>
+        {showImg && <img src={post.coverImage} alt={post.title} onError={()=>setImgFailed(true)}/>}
+        <div className="nc-em" style={{display:showImg?'none':'flex'}}>{em}</div>
         <div className="nc-cat"><span className="badge bc">{cat}</span></div>
       </div>
       <div className="nc-body">
@@ -1193,7 +1326,7 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
       {loading ? <div className="sk" style={{height:320,borderRadius:'var(--rl)',marginBottom:20}}/> : hero && (
         <div className="hero" onClick={()=>onArticle(hero)}>
           <div className="hero-bg">
-            {hero.coverImage ? <img src={hero.coverImage} alt={hero.title} onError={e=>e.target.style.display='none'}/> : <span style={{fontSize:80}}>{CAT_EMOJI[hero.category||hero.cat]||'📰'}</span>}
+            {hero.coverImage ? <HeroImg src={hero.coverImage} alt={hero.title} emoji={CAT_EMOJI[hero.category||hero.cat]||'📰'}/> : <span style={{fontSize:80}}>{CAT_EMOJI[hero.category||hero.cat]||'📰'}</span>}
           </div>
           <div className="hero-ov">
             <span className="badge bc" style={{marginBottom:8,display:'inline-block'}}>{hero.category||hero.cat}</span>
@@ -1412,7 +1545,7 @@ function ArticlePage({ post, onBack, user, addToast }) {
   return (
     <div style={{maxWidth:720,margin:'0 auto'}}>
       <button onClick={onBack} style={{display:'flex',alignItems:'center',gap:5,background:'none',color:'var(--cel)',marginBottom:16,fontSize:12,fontWeight:600,cursor:'pointer',border:'none'}}><Ic.Back style={{width:13,height:13}}/> Volver</button>
-      {post.coverImage && <img src={post.coverImage} alt={post.title} style={{width:'100%',maxHeight:300,objectFit:'cover',borderRadius:'var(--rl)',border:'2px solid var(--cel)',marginBottom:16}} onError={e=>e.target.style.display='none'}/>}
+      {post.coverImage && <HeroImg src={post.coverImage} alt={post.title} emoji={CAT_EMOJI[post.category||post.cat||'Deportes']||'📰'}/>}
       <div style={{marginBottom:10,display:'flex',gap:7,flexWrap:'wrap'}}>
         <span className="badge bc">{cat}</span>
         {post.meta?.sourceName && <span className="badge bc">📡 {post.meta.sourceName}</span>}
