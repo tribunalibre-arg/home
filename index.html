@@ -7,7 +7,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin=""></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin=""></script>
-<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" crossorigin=""></script>
 
 <script>
 // ═══════════════════════════════════════════════════════════
@@ -58,45 +58,59 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 
 <script>
 // ═══════════════════════════════════════════════════════════
-// RSS CON IMÁGENES — usa rss2json.com como proxy CORS.
-// Funciona 100% desde GitHub Pages sin backend.
-// Gratuito: 500 req/día. Para más, registrá un api_key gratis
-// en https://rss2json.com y reemplazá RSS2JSON_KEY abajo.
+// RSS — Estrategia dual: rss2json (primario) + proxies CORS (fallback)
+//
+// FEEDS: Google News RSS filtrado por Argentina.
+//   → Sin bloqueos por IP, siempre fresco, sin necesidad de
+//     credenciales de cada medio.
+//
+// PROXY PRIMARIO: rss2json.com
+//   → Registrá gratis en https://rss2json.com para obtener
+//     tu API key (500 req/día gratis, sin key igual funciona
+//     pero con rate-limit más bajo).
+//   → Ventaja: devuelve JSON limpio con thumbnail ya extraído.
+//
+// FALLBACK: 3 proxies CORS + parsing XML propio
 // ═══════════════════════════════════════════════════════════
-window.RSS2JSON_KEY = '';
+window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá tu key de rss2json.com (opcional pero recomendado)
 
-// Feeds que SÍ aceptan proxies CORS gratuitos
+// Google News RSS — contenido deportivo argentino, sin bloqueos
 window.RSS_FEEDS = [
-  { name: 'BBC Deportes', url: 'https://feeds.bbci.co.uk/sport/rss.xml' },
-  { name: 'ESPN',         url: 'https://www.espn.com/espn/rss/news' },
-  { name: 'Marca',        url: 'https://www.marca.com/rss/portada.xml' },
-  { name: 'AS Fútbol',    url: 'https://as.com/rss/tags/futbol.xml' },
-  { name: 'Sky Sports',   url: 'https://www.skysports.com/rss/12040' },
+  { name: 'Deportes Argentina',  url: 'https://news.google.com/rss/search?q=deportes+argentina&hl=es-AR&gl=AR&ceid=AR:es' },
+  { name: 'Fútbol Argentino',    url: 'https://news.google.com/rss/search?q=fútbol+liga+profesional+argentina&hl=es-AR&gl=AR&ceid=AR:es' },
+  { name: 'Selección Argentina', url: 'https://news.google.com/rss/search?q=selección+argentina+fútbol&hl=es-AR&gl=AR&ceid=AR:es' },
+  { name: 'River y Boca',        url: 'https://news.google.com/rss/search?q=river+boca+superclásico&hl=es-AR&gl=AR&ceid=AR:es' },
+  { name: 'Rugby Los Pumas',     url: 'https://news.google.com/rss/search?q=pumas+rugby+argentina&hl=es-AR&gl=AR&ceid=AR:es' },
 ];
 
-// Extrae la primera imagen de HTML de contenido RSS
+// ── Helpers ─────────────────────────────────────────────────
+
 function extractImgFromHtml(html) {
   if (!html) return null;
   const m = html.match(/<img[^>]+src=["']([^"']+)["']/i);
   return m ? m[1] : null;
 }
 
+// Parser XML (usado por los fallback CORS)
 function parseRSSXml(xmlText, sourceName) {
   const xml     = new DOMParser().parseFromString(xmlText, 'text/xml');
   const entries = [...xml.querySelectorAll('item')];
   if (!entries.length) throw new Error('sin items en el XML');
-  return entries.slice(0, 10).map(item => {
-    const get = tag => item.querySelector(tag)?.textContent?.trim() || '';
+  return entries.slice(0, 15).map(item => {
+    const get  = tag => item.querySelector(tag)?.textContent?.trim() || '';
     const desc = get('description');
     const img  =
       item.querySelector('enclosure[type^="image"]')?.getAttribute('url') ||
-      item.querySelector('thumbnail')?.getAttribute('url') ||
-      item.querySelector('content')?.getAttribute('url') ||
-      extractImgFromHtml(desc) || null;
+      item.querySelector('thumbnail')?.getAttribute('url')               ||
+      item.querySelector('content')?.getAttribute('url')                 ||
+      // media:thumbnail / media:content (namespace)
+      [...item.children].find(n => n.localName === 'thumbnail')?.getAttribute('url') ||
+      [...item.children].find(n => n.localName === 'content' && n.getAttribute('medium') === 'image')?.getAttribute('url') ||
+      extractImgFromHtml(get('content:encoded') || desc) || null;
     return {
       _id:         get('guid') || get('link'),
       title:       get('title'),
-      excerpt:     desc.replace(/<[^>]+>/g,'').replace(/&[a-z]+;/gi,' ').trim().slice(0,200),
+      excerpt:     desc.replace(/<[^>]+>/g,'').replace(/&[a-z#0-9]+;/gi,' ').trim().slice(0, 220),
       publishedAt: get('pubDate') || new Date().toISOString(),
       coverImage:  img,
       cat:         get('category') || 'Deportes',
@@ -106,20 +120,60 @@ function parseRSSXml(xmlText, sourceName) {
   });
 }
 
-// fetchRSSFeed — tres proxies CORS gratuitos en cascada, sin rss2json
+// Parser JSON de rss2json (thumbnail ya viene resuelto)
+function parseRss2Json(data, sourceName) {
+  if (data.status !== 'ok' || !Array.isArray(data.items))
+    throw new Error('rss2json: respuesta inválida — ' + data.message);
+  return data.items.slice(0, 15).map(item => ({
+    _id:         item.guid || item.link,
+    title:       item.title,
+    excerpt:     (item.description || '').replace(/<[^>]+>/g,'').replace(/&[a-z#0-9]+;/gi,' ').trim().slice(0, 220),
+    publishedAt: item.pubDate || new Date().toISOString(),
+    coverImage:  item.thumbnail || extractImgFromHtml(item.content || item.description) || null,
+    cat:         (item.categories && item.categories[0]) || 'Deportes',
+    category:    (item.categories && item.categories[0]) || 'Deportes',
+    meta:        { sourceName, sourceUrl: item.link || '#' }
+  }));
+}
+
+// ── fetchRSSFeed ─────────────────────────────────────────────
 window.fetchRSSFeed = async function(feedUrl, sourceName) {
   const CACHE_TTL = 15 * 60 * 1000;
-  const cacheKey  = 'tl_rss_' + sourceName.replace(/\W/g,'_');
+  const cacheKey  = 'tl_rss_' + sourceName.replace(/\W/g, '_');
+
+  // Helpers internos
+  const abort = ms => { const c = new AbortController(); setTimeout(() => c.abort(), ms); return c.signal; };
+  const save  = items => { try { localStorage.setItem(cacheKey, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {} };
+  const stale = () => { try { const r = localStorage.getItem(cacheKey); if (r) { const { data } = JSON.parse(r); if (Array.isArray(data) && data.length) return data; } } catch(e) {} return []; };
+
+  // 1 ▸ Caché válido
   try {
     const raw = localStorage.getItem(cacheKey);
     if (raw) {
       const { data, ts } = JSON.parse(raw);
       if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length > 0) {
-        console.log(`RSS [${sourceName}] desde caché (${data.length} items)`);
+        console.log(`RSS [${sourceName}] caché ✓ (${data.length} items)`);
         return data;
       }
     }
   } catch(e) {}
+
+  // 2 ▸ rss2json — primario (JSON, thumbnail resuelto automáticamente)
+  try {
+    const key    = window.RSS2JSON_KEY || '';
+    const apiUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(feedUrl)}&count=20${key ? '&api_key=' + key : ''}`;
+    const resp   = await fetch(apiUrl, { signal: abort(10000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const json  = await resp.json();
+    const items = parseRss2Json(json, sourceName);
+    save(items);
+    console.log(`RSS [${sourceName}] rss2json ✓ (${items.length} items)`);
+    return items;
+  } catch(e) {
+    console.warn(`RSS [${sourceName}] rss2json ✗: ${e.message}`);
+  }
+
+  // 3 ▸ Proxies CORS + parsing XML (fallback)
   const proxies = [
     url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
     url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
@@ -127,23 +181,21 @@ window.fetchRSSFeed = async function(feedUrl, sourceName) {
   ];
   for (let i = 0; i < proxies.length; i++) {
     try {
-      const ctrl = new AbortController();
-      const tId  = setTimeout(() => ctrl.abort(), 9000);
-      const resp = await fetch(proxies[i](feedUrl), { signal: ctrl.signal }).finally(() => clearTimeout(tId));
+      const resp = await fetch(proxies[i](feedUrl), { signal: abort(10000) });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const items = parseRSSXml(await resp.text(), sourceName);
-      try { localStorage.setItem(cacheKey, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
-      console.log(`RSS [${sourceName}] cargado: ${items.length} noticias (proxy ${i+1})`);
+      save(items);
+      console.log(`RSS [${sourceName}] proxy ${i + 1} ✓ (${items.length} items)`);
       return items;
     } catch(e) {
-      console.warn(`RSS [${sourceName}] proxy ${i+1} falló: ${e.message}`);
+      console.warn(`RSS [${sourceName}] proxy ${i + 1} ✗: ${e.message}`);
     }
   }
-  try {
-    const raw = localStorage.getItem(cacheKey);
-    if (raw) { const { data } = JSON.parse(raw); if (Array.isArray(data) && data.length > 0) return data; }
-  } catch(e) {}
-  return [];
+
+  // 4 ▸ Caché vencida — último recurso
+  const staleData = stale();
+  if (staleData.length) console.warn(`RSS [${sourceName}] usando caché vencida (${staleData.length} items)`);
+  return staleData;
 };
 </script>
 
@@ -831,15 +883,20 @@ const CM_TOPICOS = [
 ];
 
 const KARMA_ACCIONES = [
-  {accion:'Publicar contenido',pts:10},{accion:'Publicación con 10+ likes',pts:15},
-  {accion:'Dar like a un colega',pts:2},{accion:'Ofrecer colaboración',pts:8},
-  {accion:'Completar perfil',pts:20},{accion:'Dar/pedir mentoría',pts:12},
-  {accion:'Nota en tópico trending',pts:25},{accion:'Racha 7 días',pts:30},
+  {accion:'Publicar contenido',pts:8},{accion:'Publicación con 10+ likes',pts:20},
+  {accion:'Publicación con 25+ likes',pts:35},{accion:'Dar like a un colega',pts:1},
+  {accion:'Comentar una nota',pts:2},{accion:'Ofrecer colaboración',pts:12},
+  {accion:'Completar perfil',pts:30},{accion:'Dar/pedir mentoría',pts:18},
+  {accion:'Nota en tópico trending',pts:40},{accion:'Racha 7 días',pts:50},
+  {accion:'Subir episodio de podcast',pts:15},{accion:'Seguir un programa',pts:2},
 ];
 const KARMA_NIVELES = [
-  {nombre:'🎒 Pasante',min:0,max:49},{nombre:'✏️ Cronista',min:50,max:149},
-  {nombre:'📝 Redactor',min:150,max:299},{nombre:'🖊️ Editor',min:300,max:599},
-  {nombre:'⭐ Referente',min:600,max:Infinity},
+  {nombre:'🎒 Pasante',   min:0,    max:99},
+  {nombre:'✏️ Cronista',  min:100,  max:349},
+  {nombre:'📝 Redactor',  min:350,  max:799},
+  {nombre:'🖊️ Editor',    min:800,  max:1799},
+  {nombre:'⭐ Referente', min:1800, max:3999},
+  {nombre:'🏆 Leyenda',   min:4000, max:Infinity},
 ];
 function getKarmaLevel(pts){return KARMA_NIVELES.find(l=>pts>=l.min&&pts<=l.max)||KARMA_NIVELES[0];}
 function getKarmaProgress(pts){
@@ -3068,14 +3125,33 @@ function RedPeriodismoPage({ addToast }) {
 
 /* ══════ RED FEED TAB ══════ */
 function RedFeedTab({notas, addToast, sumar}){
-  const [items, setItems] = useState(notas);
+  const [items, setItems] = useState([]);
+  const [cargando, setCargando] = useState(true);
   const [filtro, setFiltro] = useState('Todos');
+  const sb = window.__supabase;
   const formatos = ['Todos','Nota','Entrevista','Video','Columna','Fotografía','Podcast'];
+  const emMap = {Nota:'📰',Entrevista:'🎤',Video:'📹',Columna:'✍️',Fotografía:'📸',Podcast:'🎙️'};
+  useEffect(()=>{
+    async function cargar(){
+      setCargando(true);
+      if(sb){
+        try{
+          const {data,error} = await sb.from('red_notas').select('*').order('created_at',{ascending:false}).limit(30);
+          if(!error && data && data.length>0){
+            setItems(data.map(n=>({id:n.id,formato:n.formato,em:emMap[n.formato]||'📰',deporte:n.deporte,titulo:n.titulo,resumen:n.resumen,autor:n.autor,autorEm:'✍️',fecha:new Date(n.created_at).toLocaleDateString('es-AR'),lecturas:n.lecturas||0,likes:n.likes||0,verificado:false})));
+            setCargando(false);return;
+          }
+        }catch(e){console.warn('RED feed:',e.message);}
+      }
+      setItems(notas);setCargando(false);
+    }
+    cargar();
+  },[]);
   const filtrados = filtro==='Todos'?items:items.filter(n=>n.formato===filtro);
   function like(id){
-    setItems(it=>it.map(n=>n.id===id?{...n,likes:n.likes+1}:n));
-    sumar('like',2);
-    addToast({msg:'👍 Like sumado · +2 karma',type:'ok'});
+    setItems(it=>it.map(n=>n.id===id?{...n,likes:(n.likes||0)+1}:n));
+    sumar('like',1);
+    addToast({msg:'👍 +1 karma',type:'ok'});
   }
   return (
     <div>
@@ -3114,15 +3190,27 @@ function RedPublicarTab({addToast, sumar}){
   const [form, setForm] = useState({titulo:'',resumen:'',deporte:'Fútbol',autor:''});
   const [publicadas, setPublicadas] = useState([]);
   const formatos = [{em:'📰',n:'Nota'},{em:'🎤',n:'Entrevista'},{em:'📹',n:'Video'},{em:'✍️',n:'Columna'},{em:'📸',n:'Fotografía'},{em:'🎙️',n:'Podcast'}];
-  function publicar(){
+  async function publicar(){
     if(!formato){addToast({msg:'Elegí un formato primero',type:'err'});return;}
     if(!form.titulo.trim()||!form.resumen.trim()){addToast({msg:'Completá título y resumen',type:'err'});return;}
     const nueva={id:Date.now(),formato,em:formatos.find(f=>f.n===formato)?.em||'📰',deporte:form.deporte,titulo:form.titulo,resumen:form.resumen,autor:form.autor||'Vos',fecha:'ahora',lecturas:0,likes:0};
     setPublicadas(p=>[nueva,...p]);
     setForm({titulo:'',resumen:'',deporte:'Fútbol',autor:''});
     setFormato('');
-    sumar('publicar',10);
-    addToast({msg:'¡Nota publicada! +10 karma 🚀',type:'ok'});
+    const sb = window.__supabase;
+    if(sb){
+      try{
+        const {data:sess} = await sb.auth.getSession();
+        const uid = sess?.session?.user?.id;
+        const autorName = form.autor.trim() || sess?.session?.user?.user_metadata?.full_name || 'Colaborador';
+        const {error} = await sb.from('red_notas').insert({user_id:uid||null,formato,deporte:form.deporte,titulo:form.titulo,resumen:form.resumen,autor:autorName,lecturas:0,likes:0});
+        if(error) throw error;
+        addToast({msg:'¡Nota publicada en la RED! +8 karma 🚀',type:'ok'});
+      }catch(e){addToast({msg:'Error al publicar: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Publicado localmente! Conectá Supabase para que sea visible para todos 🚀',type:'ok'});
+    }
+    sumar('publicar',8);
   }
   return (
     <div>
