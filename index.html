@@ -2005,10 +2005,9 @@ function CmFeedTab({user,addToast,sumarPuntos}){
 }
 
 function CmEncuestasTab({user,addToast,sumarPuntos}){
-  const [encuestas,setEncuestas]=useState(()=>{
-    try{const s=JSON.parse(localStorage.getItem('cm_encuestas')||'null');if(s)return s;}catch(e){}
-    return STATIC_POLLS.map(p=>({...p,cierre:Date.now()+86400000,autor:'TribunaLibre',votantes:{},comentarios:[]}));
-  });
+  const sb = window.__supabase;
+  const esAuth = user?.isGuest===false;
+  const [encuestas,setEncuestas]=useState(STATIC_POLLS.map(p=>({...p,cierre:Date.now()+86400000,autor:'TribunaLibre',votantes:{},comentarios:[]})));
   const [votos,setVotos]=useState({});
   const [showForm,setShowForm]=useState(false);
   const [pollQ,setPollQ]=useState('');
@@ -2018,7 +2017,21 @@ function CmEncuestasTab({user,addToast,sumarPuntos}){
 
   const nombreUsuario=user?.isGuest===false?(user.displayName||user.username||'Vos'):'Invitado';
 
-  function guardarEncuestas(n){setEncuestas(n);try{localStorage.setItem('cm_encuestas',JSON.stringify(n));}catch(e){}}
+  useEffect(()=>{
+    async function cargar(){
+      if(!sb) return;
+      try{
+        const {data,error}=await sb.from('cm_encuestas').select('*').order('created_at',{ascending:false}).limit(20);
+        if(!error && data && data.length>0){
+          const sbEncs=data.map(e=>({id:e.id,q:e.pregunta,opts:e.opciones,vs:e.votos,cierre:Date.now()+86400000,autor:e.autor||'Anónimo',votantes:{},comentarios:[]}));
+          setEncuestas(prev=>[...sbEncs,...STATIC_POLLS.map(p=>({...p,cierre:Date.now()+86400000,autor:'TribunaLibre',votantes:{},comentarios:[]}))]);
+        }
+      }catch(e){console.warn('cm_encuestas:',e.message);}
+    }
+    cargar();
+  },[]);
+
+  function guardarEncuestas(n){setEncuestas(n);}
 
   function votar(encId,optIdx){
     if(votos[encId]!==undefined) return;
@@ -2027,15 +2040,31 @@ function CmEncuestasTab({user,addToast,sumarPuntos}){
     sumarPuntos('comentar');addToast({msg:'¡Voto registrado! ⚡',type:'ok'});
   }
 
-  function crearEncuesta(e){
+  async function crearEncuesta(e){
     if(e&&e.preventDefault) e.preventDefault();
     const q=pollQ.trim();const opts=pollOpts.map(o=>o.trim()).filter(Boolean);
     if(!q){addToast({msg:'Escribí la pregunta',type:'err'});return;}
     if(opts.length<2){addToast({msg:'Necesitás al menos 2 opciones',type:'err'});return;}
+    if(!esAuth){addToast({msg:'Iniciá sesión para crear encuestas 🔒',type:'err'});return;}
     const nueva={id:Date.now(),q,opts,vs:opts.map(()=>0),cierre:Date.now()+86400000,autor:nombreUsuario,votantes:{},comentarios:[]};
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const {data,error}=await sb.from('cm_encuestas').insert({
+          user_id:uid, autor:nombreUsuario, pregunta:q,
+          opciones:opts, votos:opts.map(()=>0)
+        }).select().single();
+        if(error) throw error;
+        nueva.id=data.id;
+        addToast({msg:'¡Encuesta publicada para todos! +10 pts 🗳️',type:'ok'});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Encuesta creada! +10 pts 🗳️',type:'ok'});
+    }
     guardarEncuestas([nueva,...encuestas]);
     setPollQ('');setPollOpts(['','']);setShowForm(false);
-    sumarPuntos('publicar');addToast({msg:'¡Encuesta creada! +10 pts 🗳️',type:'ok'});
+    sumarPuntos('publicar');
   }
 
   function enviarComentEnc(encId){
@@ -2535,74 +2564,158 @@ function ComunidadPage({user,addToast,onNav}){
 
 /* ══════ DEBATES TAB (preservado, ahora usa CM_THREADS) ══════ */
 function DebatesTab({user,addToast}){
-  const [userPolls,setUserPolls]=useState([]);
-  const [showPollForm,setShowPollForm]=useState(false);
-  const [pollQ,setPollQ]=useState('');
-  const [pollOpts,setPollOpts]=useState(['','']);
+  const sb = window.__supabase;
+  const esAuth = user?.isGuest===false;
+  const username = user?.displayName||user?.username||'Anónimo';
+  const [threads, setThreads] = useState([]);
+  const [cargando, setCargando] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({title:'',body:'',category:'General'});
+  const [abierto, setAbierto] = useState(null);
+  const [comentTxt, setComentTxt] = useState('');
+  const [comentarios, setComentarios] = useState({});
 
-  function addOpt(){if(pollOpts.length<5)setPollOpts(o=>[...o,'']);}
-  function setOpt(i,v){setPollOpts(o=>o.map((x,j)=>j===i?v:x));}
-  function removeOpt(i){if(pollOpts.length>2)setPollOpts(o=>o.filter((_,j)=>j!==i));}
-  function createPoll(e){
-    e.preventDefault();
-    const q=pollQ.trim();const opts=pollOpts.map(o=>o.trim()).filter(Boolean);
-    if(!q){addToast({msg:'Escribí la pregunta de la encuesta',type:'err'});return;}
-    if(opts.length<2){addToast({msg:'Necesitás al menos 2 opciones',type:'err'});return;}
-    setUserPolls(p=>[{id:Date.now(),q,opts,vs:opts.map(()=>0)},...p]);
-    setPollQ('');setPollOpts(['','']);setShowPollForm(false);
-    addToast({msg:'¡Encuesta creada! 🗳️',type:'ok'});
+  const CATS = ['General','Fútbol','Rugby','Básquet','F1','Tenis','Opinión'];
+
+  useEffect(()=>{
+    async function cargar(){
+      setCargando(true);
+      if(sb){
+        try{
+          const {data,error} = await sb.from('cm_threads').select('*').order('created_at',{ascending:false}).limit(30);
+          if(!error && data && data.length>0){
+            setThreads(data.map(t=>({id:t.id,title:t.title,body:t.body,cat:t.category,author:t.username,r:t.replies||0,v:t.views||0,hot:t.is_hot||false,t:new Date(t.created_at).toLocaleDateString('es-AR')})));
+            setCargando(false);return;
+          }
+        }catch(e){console.warn('Debates load:',e.message);}
+      }
+      setThreads(CM_THREADS.map(t=>({...t})));
+      setCargando(false);
+    }
+    cargar();
+  },[]);
+
+  async function crearHilo(){
+    if(!form.title.trim()){addToast({msg:'Escribí el título del hilo',type:'err'});return;}
+    if(!esAuth){addToast({msg:'Iniciá sesión para crear hilos 🔒',type:'err'});return;}
+    const nuevo={id:Date.now(),title:form.title,body:form.body,cat:form.category,author:username,r:0,v:0,hot:false,t:'ahora'};
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const {data,error}=await sb.from('cm_threads').insert({user_id:uid,username,title:form.title,body:form.body,category:form.category}).select().single();
+        if(error) throw error;
+        nuevo.id=data.id;
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    }
+    setThreads(t=>[nuevo,...t]);
+    setForm({title:'',body:'',category:'General'});
+    setShowForm(false);
+    addToast({msg:'¡Hilo creado! 🔥',type:'ok'});
   }
+
+  async function cargarComentarios(threadId){
+    if(comentarios[threadId]) return;
+    if(sb){
+      try{
+        const {data}=await sb.from('thread_comments').select('*').eq('thread_id',threadId).order('created_at',{ascending:true});
+        setComentarios(c=>({...c,[threadId]:data||[]}));return;
+      }catch(e){}
+    }
+    setComentarios(c=>({...c,[threadId]:[]}));
+  }
+
+  async function comentar(threadId){
+    if(!comentTxt.trim()) return;
+    if(!esAuth){addToast({msg:'Iniciá sesión para comentar 🔒',type:'err'});return;}
+    const nuevo={id:Date.now(),username,content:comentTxt,created_at:new Date().toISOString()};
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const {data,error}=await sb.from('thread_comments').insert({thread_id:threadId,user_id:uid,username,content:comentTxt}).select().single();
+        if(error) throw error;
+        nuevo.id=data.id;
+        await sb.rpc('increment_thread_replies',{p_thread_id:threadId}).catch(()=>{});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    }
+    setComentarios(c=>({...c,[threadId]:[...(c[threadId]||[]),nuevo]}));
+    setThreads(t=>t.map(x=>x.id===threadId?{...x,r:x.r+1}:x));
+    setComentTxt('');
+    addToast({msg:'Comentario publicado ✓',type:'ok'});
+  }
+
+  function abrirHilo(id){
+    if(abierto===id){setAbierto(null);return;}
+    setAbierto(id);
+    cargarComentarios(id);
+  }
+
+  if(cargando) return <div style={{textAlign:'center',padding:40,color:'var(--tx3)'}}>Cargando debates...</div>;
 
   return (
     <div>
       <div className="sh">
         <div className="st">Hilos activos</div>
-        <span className="sl" onClick={()=>addToast({msg:'Función de nuevo hilo próximamente',type:'ok'})}>+ Nuevo hilo</span>
+        {esAuth
+          ? <button className="btn btn-c btn-sm" onClick={()=>setShowForm(s=>!s)}><Ic.Plus style={{width:11,height:11}}/> Nuevo hilo</button>
+          : <span className="sl" onClick={()=>addToast({msg:'Registrate para crear hilos',type:'ok'})}>+ Nuevo hilo</span>
+        }
       </div>
-      {CM_THREADS.map(t=>(
-        <div key={t.id} className="thread-card">
-          <div style={{display:'flex',gap:5,marginBottom:5}}>
-            {t.hot&&<span className="badge br-b" style={{display:'flex',alignItems:'center',gap:2}}><Ic.Fire style={{width:9,height:9}}/>Hot</span>}
-            <span className="badge bc" style={{fontSize:9}}>{t.cat}</span>
-            <span style={{fontSize:10,color:'var(--tx3)',marginLeft:'auto'}}>{t.t}</span>
+
+      {showForm&&(
+        <div className="card cp" style={{marginBottom:14,border:'1.5px solid var(--cel)'}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10,color:'var(--cel-d)'}}>🔥 Nuevo hilo de debate</div>
+          <div style={{marginBottom:8}}><label className="fl">Título del hilo</label><input className="fi" value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))} placeholder="¿De qué querés debatir?"/></div>
+          <div style={{marginBottom:8}}><label className="fl">Descripción (opcional)</label><textarea className="fi" value={form.body} onChange={e=>setForm(f=>({...f,body:e.target.value}))} placeholder="Contá más sobre el tema..." style={{minHeight:60,resize:'vertical'}}/></div>
+          <div style={{marginBottom:12}}><label className="fl">Categoría</label>
+            <select className="fi" style={{background:'var(--cel-xl)'}} value={form.category} onChange={e=>setForm(f=>({...f,category:e.target.value}))}>
+              {CATS.map(c=><option key={c}>{c}</option>)}
+            </select>
           </div>
-          <div className="thread-tit">{t.title}</div>
-          <div className="thread-mt">
-            <span style={{display:'flex',alignItems:'center',gap:3}}><Ic.Comment style={{width:11,height:11}}/>{t.r}</span>
-            <span style={{display:'flex',alignItems:'center',gap:3}}><Ic.Eye style={{width:11,height:11}}/>{t.v}</span>
-            <span>@{t.author}</span>
+          <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+            <button className="btn btn-o btn-sm" onClick={()=>setShowForm(false)}>Cancelar</button>
+            <button className="btn btn-c btn-sm" onClick={crearHilo}>Publicar hilo</button>
           </div>
+        </div>
+      )}
+
+      {threads.map(t=>(
+        <div key={t.id}>
+          <div className="thread-card" onClick={()=>abrirHilo(t.id)} style={{cursor:'pointer'}}>
+            <div style={{display:'flex',gap:5,marginBottom:5}}>
+              {t.hot&&<span className="badge br-b" style={{display:'flex',alignItems:'center',gap:2}}><Ic.Fire style={{width:9,height:9}}/>Hot</span>}
+              <span className="badge bc" style={{fontSize:9}}>{t.cat}</span>
+              <span style={{fontSize:10,color:'var(--tx3)',marginLeft:'auto'}}>{t.t}</span>
+            </div>
+            <div className="thread-tit">{t.title}</div>
+            {t.body&&<div style={{fontSize:11,color:'var(--tx2)',marginTop:4,lineHeight:1.4}}>{t.body.slice(0,120)}{t.body.length>120?'…':''}</div>}
+            <div className="thread-mt">
+              <span style={{display:'flex',alignItems:'center',gap:3}}><Ic.Comment style={{width:11,height:11}}/>{t.r}</span>
+              <span style={{display:'flex',alignItems:'center',gap:3}}><Ic.Eye style={{width:11,height:11}}/>{t.v}</span>
+              <span>@{t.author}</span>
+            </div>
+          </div>
+          {abierto===t.id&&(
+            <div style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderTop:'none',borderRadius:'0 0 var(--r) var(--r)',padding:12,marginBottom:10}}>
+              {(comentarios[t.id]||[]).length===0&&<div style={{fontSize:12,color:'var(--tx3)',marginBottom:8}}>Sin comentarios todavía. ¡Sé el primero!</div>}
+              {(comentarios[t.id]||[]).map(c=>(
+                <div key={c.id} style={{display:'flex',gap:8,marginBottom:10,paddingBottom:10,borderBottom:'1px solid var(--br)'}}>
+                  <div style={{width:24,height:24,borderRadius:'50%',background:'var(--cel)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:10,color:'white',flexShrink:0}}>{(c.username||'?')[0].toUpperCase()}</div>
+                  <div><div style={{fontSize:11,fontWeight:700,color:'var(--tx)',marginBottom:2}}>{c.username}</div><div style={{fontSize:12,color:'var(--tx2)'}}>{c.content}</div></div>
+                </div>
+              ))}
+              {esAuth
+                ? <div style={{display:'flex',gap:7,marginTop:6}}>
+                    <input className="fi" style={{flex:1}} value={comentTxt} onChange={e=>setComentTxt(e.target.value)} onKeyDown={e=>e.key==='Enter'&&comentar(t.id)} placeholder="Tu comentario..."/>
+                    <button className="btn btn-c btn-sm" onClick={()=>comentar(t.id)}>Enviar</button>
+                  </div>
+                : <div style={{fontSize:11,color:'var(--tx3)'}}>Iniciá sesión para comentar</div>
+              }
+            </div>
+          )}
         </div>
       ))}
-      <div className="sh" style={{marginTop:18}}>
-        <div className="st">Encuestas</div>
-        <button className="btn btn-c btn-sm" onClick={()=>setShowPollForm(s=>!s)}><Ic.Plus style={{width:11,height:11}}/> Crear encuesta</button>
-      </div>
-      {showPollForm&&(
-        <div className="card cp" style={{marginBottom:14,border:'1.5px solid var(--cel)'}}>
-          <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10,color:'var(--cel-d)'}}>🗳️ Nueva encuesta</div>
-          <div style={{marginBottom:9}}><label className="fl">Pregunta</label><input className="fi" value={pollQ} onChange={e=>setPollQ(e.target.value)} placeholder="¿Cuál es tu pregunta?"/></div>
-          <label className="fl">Opciones</label>
-          {pollOpts.map((opt,i)=>(
-            <div key={i} style={{display:'flex',gap:6,marginBottom:6}}>
-              <input className="fi" style={{flex:1}} value={opt} onChange={e=>setOpt(i,e.target.value)} placeholder={`Opción ${i+1}`}/>
-              {pollOpts.length>2&&<button onClick={()=>removeOpt(i)} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontSize:16,padding:'0 4px'}}>×</button>}
-            </div>
-          ))}
-          {pollOpts.length<5&&<button className="btn btn-o btn-sm" style={{marginBottom:10}} onClick={addOpt}><Ic.Plus style={{width:10,height:10}}/> Agregar opción</button>}
-          <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
-            <button className="btn btn-o btn-sm" onClick={()=>setShowPollForm(false)}>Cancelar</button>
-            <button className="btn btn-c btn-sm" onClick={createPoll}>Publicar encuesta</button>
-          </div>
-        </div>
-      )}
-      {STATIC_POLLS.map(p=><div key={p.id} className="card cp" style={{marginBottom:12}}><Poll poll={p}/></div>)}
-      {userPolls.length>0&&(
-        <>
-          <div style={{fontSize:10,fontWeight:700,color:'var(--tx3)',letterSpacing:'1.2px',textTransform:'uppercase',margin:'14px 0 8px'}}>De la comunidad</div>
-          {userPolls.map(p=><div key={p.id} className="card cp" style={{marginBottom:12,border:'1px solid rgba(74,144,217,.3)'}}><Poll poll={p}/></div>)}
-        </>
-      )}
     </div>
   );
 }
@@ -2693,14 +2806,41 @@ function ProdePage({ user, addToast }) {
   const [submitted, setSubmitted] = useState(false);
   const [quinPick, setQuinPick]   = useState({});
   const [desafio, setDesafio]     = useState(null);
+  const [sbRanking, setSbRanking] = useState([]);
   const totalPicked = Object.keys(picks).length;
 
+  useEffect(()=>{
+    async function cargarRanking(){
+      const sb=window.__supabase;
+      if(!sb) return;
+      try{
+        const {data}=await sb.from('prode_ranking').select('*').order('aciertos',{ascending:false}).limit(10);
+        if(data && data.length>0) setSbRanking(data);
+      }catch(e){}
+    }
+    cargarRanking();
+  },[]);
+
   function pick(id, r) { if (!submitted) setPicks(p => ({...p,[id]:r})); }
-  function submit() {
+  async function submit() {
     if (totalPicked < PRODE_MATCHES.length) { addToast({msg:'Completá todas las predicciones antes de enviar',type:'err'}); return; }
     if (!user || user.isGuest) { addToast({msg:'Necesitás registrarte para guardar tus predicciones 🔒',type:'err'}); return; }
+    const sb = window.__supabase;
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const uname=user?.displayName||'Anónimo';
+        const rows=Object.entries(picks).map(([partido_id,pick])=>({user_id:uid,partido_id,username:uname,pick}));
+        const {error}=await sb.from('prode_picks').upsert(rows,{onConflict:'user_id,partido_id'});
+        if(error) throw error;
+        await sb.from('prode_ranking').upsert({user_id:uid,username:uname,aciertos:0},{onConflict:'user_id'});
+        addToast({msg:'¡Predicciones guardadas para todos! ¡Mucha suerte! 🏆',type:'ok'});
+      }catch(e){ addToast({msg:'Error: '+e.message,type:'err'}); return; }
+    } else {
+      addToast({msg:'¡Predicciones guardadas! ¡Mucha suerte! 🏆',type:'ok'});
+    }
     setSubmitted(true);
-    addToast({msg:'¡Predicciones guardadas! ¡Mucha suerte! 🏆',type:'ok'});
   }
 
   const ACIERTOS = [
@@ -2959,14 +3099,48 @@ function RevistaPage({ user, addToast }) {
   const [tab, setTab]       = useState('promesa');
   const [showForm, setShowForm] = useState(false);
   const [form, setForm]     = useState({nombre:'',edad:'',deporte:'',descripcion:'',contacto:''});
+  const [sbTalentos, setSbTalentos] = useState([]);
 
-  function submitTalento() {
+  useEffect(()=>{
+    async function cargarTalentos(){
+      const sb=window.__supabase;
+      if(!sb) return;
+      try{
+        const {data,error}=await sb.from('talentos').select('*').order('created_at',{ascending:false}).limit(20);
+        if(!error && data && data.length>0)
+          setSbTalentos(data.map(t=>({em:'⭐',nombre:t.nombre,edad:t.edad||0,deporte:t.deporte,club:t.club||'',desc:t.descripcion||'',nominador:t.nominador_username||'Anónimo',seguidores:t.seguidores||0})));
+      }catch(e){}
+    }
+    cargarTalentos();
+  },[]);
+
+  async function submitTalento() {
     if (!form.nombre.trim() || !form.deporte.trim()) { addToast({msg:'Completá nombre y deporte',type:'err'}); return; }
-    addToast({msg:'¡Talento enviado para revisión! 🌟',type:'ok'});
+    if (!user || user.isGuest) { addToast({msg:'Iniciá sesión para nominar talentos 🔒',type:'err'}); return; }
+    const sb = window.__supabase;
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const uname=user?.displayName||'Anónimo';
+        const {data,error}=await sb.from('talentos').insert({
+          nombre:form.nombre.trim(), edad:parseInt(form.edad)||null,
+          deporte:form.deporte.trim(), club:'',
+          descripcion:form.descripcion.trim(),
+          nominado_por:uid, nominador_username:uname
+        }).select().single();
+        if(error) throw error;
+        setSbTalentos(t=>[{em:'⭐',nombre:data.nombre,edad:data.edad||0,deporte:data.deporte,club:'',desc:data.descripcion||'',nominador:uname,seguidores:0},...t]);
+        addToast({msg:'¡Talento enviado para toda la comunidad! 🌟',type:'ok'});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Talento enviado para revisión! 🌟',type:'ok'});
+    }
     setShowForm(false); setForm({nombre:'',edad:'',deporte:'',descripcion:'',contacto:''});
   }
 
   const TALENTOS = [
+    ...sbTalentos,
     {em:'⚽',nombre:'Lucas Ferreyra',edad:16,deporte:'Fútbol',club:'Reserva River',desc:'Mediocampista de 16 años con visión de juego y gol. Promovido recientemente al plantel de reserva.'},
     {em:'🏉',nombre:'Valentina Ríos',edad:17,deporte:'Rugby',club:'Liceo Naval',desc:'Scrum-half que lidera a su equipo al torneo nacional. Convocada preselección Argentina U18.'},
     {em:'🎾',nombre:'Tomás Aguirre',edad:15,deporte:'Tenis',club:'Independiente TC',desc:'Finalista del Nacional Juvenil. Su revés a dos manos es ya marca registrada en el circuito.'},
@@ -3585,14 +3759,42 @@ function PeriodismoDeportivoSubTab({ addToast }) {
     setChatMsg('');
     setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
   }
-  function submitNota(e) {
+  useEffect(()=>{
+    async function cargarPeri(){
+      const sb=window.__supabase;
+      if(!sb) return;
+      try{
+        const {data,error}=await sb.from('peri_articulos').select('*').order('created_at',{ascending:false}).limit(20);
+        if(!error && data && data.length>0){
+          setUserNotas(data.map(a=>({id:a.id,emoji:'✍️',cat:a.categoria,titulo:a.titulo,resumen:a.resumen,autor:a.autor,fecha:new Date(a.created_at).toLocaleDateString('es-AR'),lecturas:a.lecturas||0})));
+        }
+      }catch(e){console.warn('peri_articulos:',e.message);}
+    }
+    cargarPeri();
+  },[]);
+
+  async function submitNota(e) {
     if (e && e.preventDefault) e.preventDefault();
     if (!nota.titulo.trim() || !nota.resumen.trim()) { addToast({msg:'Completá título y resumen',type:'err'}); return; }
+    const sb=window.__supabase;
     const nueva = {id:Date.now(),emoji:'✍️',cat:nota.cat,titulo:nota.titulo,resumen:nota.resumen,autor:nota.autor||'Colaborador',fecha:new Date().toLocaleDateString('es-AR'),lecturas:0};
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const autorFinal=nota.autor.trim()||sess?.session?.user?.user_metadata?.full_name||'Colaborador';
+        const {data,error}=await sb.from('peri_articulos').insert({user_id:uid||null,autor:autorFinal,categoria:nota.cat,titulo:nota.titulo,resumen:nota.resumen}).select().single();
+        if(error) throw error;
+        nueva.id=data.id;
+        nueva.autor=autorFinal;
+        addToast({msg:'¡Columna publicada para todos! +12 karma 🎉',type:'ok'});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Publicado localmente! Conectá Supabase para que todos la vean 🎉',type:'ok'});
+    }
     setUserNotas(n => [nueva,...n]);
     setNota({titulo:'',resumen:'',autor:'',cat:'Coberturas'});
     setShowForm(false);
-    addToast({msg:'¡Tu columna fue publicada! 🎉',type:'ok'});
   }
   return (
     <div>
@@ -3903,10 +4105,27 @@ function PodDestacadosTab({ sumar, addToast }) {
 
 /* ── PROGRAMAS ── */
 function PodProgramasTab({ sumar, addToast }) {
+  const sb = window.__supabase;
   const [filtro, setFiltro] = useState('Todos');
   const [seguidos, setSeguidos] = useState({});
+  const [shows, setShows] = useState(POD_SHOWS);
   const deportes = ['Todos','Fútbol','Rugby','Básquet','F1','Tenis'];
-  const filtrados = filtro==='Todos' ? POD_SHOWS : POD_SHOWS.filter(s=>s.deporte===filtro);
+
+  useEffect(()=>{
+    async function cargar(){
+      if(!sb) return;
+      try{
+        const {data,error}=await sb.from('pod_shows').select('*').order('created_at',{ascending:false}).limit(30);
+        if(!error && data && data.length>0){
+          const colores=['#1DB954','#8B5CF6','#E8593C','#FF0000','#F59E0B','#4A90D9'];
+          setShows([...data.map((s,i)=>({id:s.id,em:'🎙️',titulo:s.titulo,host:s.host,desc:s.descripcion||'',deporte:s.deporte||'Multi-deporte',episodios:0,seguidores:s.seguidores||0,src:s.src||'spotify',srcUrl:s.src_url||'#',color:colores[i%colores.length],bg:'rgba(139,92,246,.1)',verificado:false})),...POD_SHOWS]);
+        }
+      }catch(e){console.warn('pod_shows:',e.message);}
+    }
+    cargar();
+  },[]);
+
+  const filtrados = filtro==='Todos' ? shows : shows.filter(s=>s.deporte===filtro);
   function seguir(s){
     setSeguidos(f=>({...f,[s.id]:!f[s.id]}));
     if(!seguidos[s.id]){ sumar(2); addToast({msg:`Siguiendo ${s.titulo} 🎙️`,type:'ok'}); }
@@ -3956,12 +4175,28 @@ function PodProgramasTab({ sumar, addToast }) {
 
 /* ── EPISODIOS ── */
 function PodEpisodiosTab({ sumar, addToast }) {
+  const sb = window.__supabase;
   const [items, setItems] = useState(POD_EPISODES);
   const [filtro, setFiltro] = useState('Todos');
-  const shows = ['Todos',...new Set(POD_EPISODES.map(e=>e.showTitle))];
-  const filtrados = filtro==='Todos'?items:items.filter(e=>e.showTitle===filtro);
+
+  useEffect(()=>{
+    async function cargar(){
+      if(!sb) return;
+      try{
+        const {data,error}=await sb.from('pod_episodes').select('*, pod_shows(titulo, host)').order('created_at',{ascending:false}).limit(30);
+        if(!error && data && data.length>0){
+          const mapped=data.map(e=>({id:e.id,showId:e.show_id,em:'🎙️',showTitle:e.pod_shows?.titulo||'Mi Programa',titulo:e.titulo,desc:e.descripcion||'',dur:e.duracion||'',fecha:new Date(e.created_at).toLocaleDateString('es-AR'),plays:e.plays||0,likes:e.likes||0,src:e.src||'spotify',srcUrl:e.url||'#',color:'#8B5CF6',showBg:'rgba(139,92,246,.15)'}));
+          setItems([...mapped,...POD_EPISODES]);
+        }
+      }catch(e){console.warn('pod_episodes:',e.message);}
+    }
+    cargar();
+  },[]);
+
+  const allShows = ['Todos',...new Set(items.map(e=>e.showTitle))];
+  const filtrados  = filtro==='Todos'?items:items.filter(e=>e.showTitle===filtro);
   function like(id){
-    setItems(it=>it.map(e=>e.id===id?{...e,likes:e.likes+1}:e));
+    setItems(it=>it.map(e=>e.id===id?{...e,likes:(e.likes||0)+1}:e));
     sumar(1); addToast({msg:'❤️ Like · +1 karma',type:'ok'});
   }
   return (
@@ -4008,16 +4243,44 @@ function PodSubirTab({ sumar, addToast, user }) {
   const [misShows, setMisShows] = useState([]);
   const [misEps, setMisEps] = useState([]);
 
-  function crearShow(){
+  async function crearShow(){
     if(!show.titulo.trim()){addToast({msg:'Poné un nombre al programa',type:'err'});return;}
-    setMisShows(s=>[{id:Date.now(),...show,episodios:0},...s]);
-    sumar(20); addToast({msg:`¡Programa "${show.titulo}" creado! +20 karma 🎙️`,type:'ok'});
+    const sb=window.__supabase;
+    const nuevoShow={id:Date.now(),...show,episodios:0};
+    if(sb){
+      try{
+        const {data:sess}=await sb.auth.getSession();
+        const uid=sess?.session?.user?.id;
+        const host=sess?.session?.user?.user_metadata?.full_name||user?.displayName||'Conductor';
+        const {data,error}=await sb.from('pod_shows').insert({user_id:uid||null,host,titulo:show.titulo,descripcion:show.desc,deporte:show.deporte,src:show.src}).select().single();
+        if(error) throw error;
+        nuevoShow.id=data.id;
+        addToast({msg:`¡Programa "${show.titulo}" creado para todos! +20 karma 🎙️`,type:'ok'});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:`¡Programa creado localmente! +20 karma 🎙️`,type:'ok'});
+    }
+    setMisShows(s=>[nuevoShow,...s]);
+    sumar(20);
     setShow({titulo:'',desc:'',deporte:'Fútbol',src:'spotify'}); setPaso(2);
   }
-  function subirEp(){
+  async function subirEp(){
     if(!ep.titulo.trim()||!ep.url.trim()){addToast({msg:'Completá título y URL del episodio',type:'err'});return;}
-    setMisEps(e=>[{id:Date.now(),...ep,fecha:'ahora',plays:0,likes:0},...e]);
-    sumar(15); addToast({msg:'¡Episodio publicado! +15 karma 🚀',type:'ok'});
+    const sb=window.__supabase;
+    const nuevoEp={id:Date.now(),...ep,fecha:'ahora',plays:0,likes:0};
+    if(sb && misShows.length>0){
+      try{
+        const showId=misShows[0].id;
+        const {data,error}=await sb.from('pod_episodes').insert({show_id:showId,titulo:ep.titulo,descripcion:ep.desc,url:ep.url,duracion:ep.dur,src:'anchor'}).select().single();
+        if(error) throw error;
+        nuevoEp.id=data.id;
+        addToast({msg:'¡Episodio publicado para todos! +15 karma 🚀',type:'ok'});
+      }catch(e){addToast({msg:'Error: '+e.message,type:'err'});return;}
+    } else {
+      addToast({msg:'¡Episodio guardado! Creá primero un programa para publicarlo. +15 karma 🚀',type:'ok'});
+    }
+    setMisEps(e=>[nuevoEp,...e]);
+    sumar(15);
     setEp({titulo:'',desc:'',url:'',dur:''});
   }
   const srcs = [{id:'spotify',label:'Spotify',cls:'pod-src-spotify'},{id:'youtube',label:'YouTube',cls:'pod-src-youtube'},{id:'anchor',label:'Anchor / Buzzsprout',cls:'pod-src-anchor'},{id:'rss',label:'RSS Feed',cls:'pod-src-rss'}];
