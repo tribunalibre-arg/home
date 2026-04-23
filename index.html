@@ -2572,7 +2572,8 @@ function DebatesTab({user,addToast}){
     username: user.email || 'Usuario'
   });
 
-  addToast({msg:'Hilo creado (refrescá)',type:'ok'});
+  addToast({msg:'alert('Hilo creado OK');
+location.reload(); (refrescá)',type:'ok'});
 }}>+ Nuevo hilo</span>
       </div>
       {CM_THREADS.map(t=>(
