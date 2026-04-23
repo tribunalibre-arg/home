@@ -2557,7 +2557,23 @@ function DebatesTab({user,addToast}){
     <div>
       <div className="sh">
         <div className="st">Hilos activos</div>
-        <span className="sl" onClick={()=>addToast({msg:'Función de nuevo hilo próximamente',type:'ok'})}>+ Nuevo hilo</span>
+        <span className="sl" onClick={async ()=>{
+  if(!user){
+    addToast({msg:'Tenés que iniciar sesión',type:'err'});
+    return;
+  }
+
+  const title = prompt('Título del hilo');
+  if(!title) return;
+
+  await supabase.from('cm_threads').insert({
+    title,
+    user_id: user.id,
+    username: user.email || 'Usuario'
+  });
+
+  addToast({msg:'Hilo creado (refrescá)',type:'ok'});
+}}>+ Nuevo hilo</span>
       </div>
       {CM_THREADS.map(t=>(
         <div key={t.id} className="thread-card">
