@@ -86,7 +86,7 @@ window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key 
 // ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
 // Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
 // Creá una API Key (no OAuth) en Credenciales y pegala acá.
-window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplazá con tu key
+window.YOUTUBE_KEY = 'TU_YOUTUBE_API_KEY_AQUI';  // ← reemplazá con tu key
 
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
@@ -2763,7 +2763,7 @@ function StreamingPage({ addToast }) {
         <div className="stream-hero-ov">
           <div className="play-circle"><Ic.Play style={{width:22,height:22,color:'white',marginLeft:3}}/></div>
           <div style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:700,color:'white',marginBottom:5}}>Streaming en Vivo</div>
-          <div style={{fontSize:13,color:'rgba(255,255,255,.7)'}}>Hacé clic para ver todas las transmisiones · {liveStreams.length} en vivo ahora</div>
+          <div style={{fontSize:13,color:'rgba(255,255,255,.7)'}}>Hacé clic para ver todas las transmisiones · {STREAMS.filter(s=>s.live).length} en vivo ahora</div>
         </div>
       </div>
     </div>
@@ -4221,7 +4221,7 @@ function PodEpisodiosTab({ sumar, addToast }) {
   return (
     <div>
       <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,scrollbarWidth:'none',paddingBottom:4}}>
-        {shows.map(s=>(
+        {allShows.map(s=>(
           <button key={s} onClick={()=>setFiltro(s)}
             style={{flexShrink:0,padding:'4px 11px',borderRadius:20,background:filtro===s?'var(--purple)':'var(--white)',border:`1.5px solid ${filtro===s?'var(--purple)':'var(--br)'}`,color:filtro===s?'white':'var(--tx2)',fontSize:11,fontWeight:600,cursor:'pointer',transition:'.15s',whiteSpace:'nowrap'}}>
             {s}
@@ -5034,6 +5034,12 @@ function EnVivoPage({ addToast }) {
       }
     }
     if(ok) {
+      // Partidos en vivo: TheSportsDB free tier rara vez devuelve live real,
+      // pero si hay usarlos; si no, mostrar últimos resultados reales como fallback
+      const liveReal = res.filter(e=>e.live);
+      if(liveReal.length) setPartidos(liveReal);
+      else if(res.length) setPartidos(res.slice(0,8));
+      else setPartidos([]);
       if(prox.length) setProximos(prox);
       if(res.length) setResultados(res);
       setFuente('thesportsdb');
