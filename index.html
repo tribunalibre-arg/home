@@ -83,6 +83,11 @@ window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá 
 // Devuelve el campo "image" directamente en cada artículo, sin proxies.
 window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key de gnews.io acá
 
+// ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
+// Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
+// Creá una API Key (no OAuth) en Credenciales y pegala acá.
+window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplazá con tu key
+
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
   if (!key) return [];  // sin key, saltar silenciosamente
@@ -2758,7 +2763,7 @@ function StreamingPage({ addToast }) {
         <div className="stream-hero-ov">
           <div className="play-circle"><Ic.Play style={{width:22,height:22,color:'white',marginLeft:3}}/></div>
           <div style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:700,color:'white',marginBottom:5}}>Streaming en Vivo</div>
-          <div style={{fontSize:13,color:'rgba(255,255,255,.7)'}}>Hacé clic para ver todas las transmisiones · {STREAMS.filter(s=>s.live).length} en vivo ahora</div>
+          <div style={{fontSize:13,color:'rgba(255,255,255,.7)'}}>Hacé clic para ver todas las transmisiones · {liveStreams.length} en vivo ahora</div>
         </div>
       </div>
     </div>
@@ -4818,6 +4823,126 @@ function MobileMenuFull({ page, onNav, onClose }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════
+   STREAMS EN VIVO — YouTube Data API v3 + Kick (no oficial)
+   ══════════════════════════════════════════════════════════════════ */
+
+const KICK_CANALES = [
+  {slug:'tycsports',      nombre:'TyC Sports',       em:'📺', color:'#E8262A'},
+  {slug:'espnargentina',  nombre:'ESPN Argentina',   em:'🟠', color:'#FF4500'},
+  {slug:'foxsportsla',    nombre:'Fox Sports LA',    em:'🦊', color:'#0057A8'},
+  {slug:'tntsportsla',    nombre:'TNT Sports',       em:'🔵', color:'#0070C0'},
+  {slug:'directvsports',  nombre:'DirecTV Sports',   em:'🎯', color:'#0085CA'},
+  {slug:'oleonline',      nombre:'Olé',              em:'📰', color:'#E8262A'},
+];
+
+async function fetchYouTubeLive() {
+  const key = window.YOUTUBE_KEY;
+  if (!key || key === 'TU_YOUTUBE_API_KEY_AQUI') return [];
+  const CACHE_KEY = 'tl_yt_streams';
+  const CACHE_TTL = 5 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length) return data;
+    }
+  } catch(e) {}
+  const timeout = ms => new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')),ms));
+  const fetchT  = (url,ms) => Promise.race([fetch(url), timeout(ms)]);
+  try {
+    const q = encodeURIComponent('deportes argentina en vivo TyC ESPN Fox Sports');
+    const searchUrl = `https://www.googleapis.com/youtube/v3/search?part=snippet&eventType=live&type=video&q=${q}&key=${key}&maxResults=15&relevanceLanguage=es&regionCode=AR&order=viewCount`;
+    const resp = await fetchT(searchUrl, 12000);
+    if (!resp.ok) throw new Error(`YouTube API HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (!Array.isArray(json.items) || !json.items.length) return [];
+    const videoIds = json.items.map(i => i.id && i.id.videoId).filter(Boolean).join(',');
+    const detailUrl = `https://www.googleapis.com/youtube/v3/videos?part=liveStreamingDetails,snippet&id=${videoIds}&key=${key}`;
+    const detailResp = await fetchT(detailUrl, 10000);
+    const detailJson = detailResp.ok ? await detailResp.json() : { items: [] };
+    const detailMap = {};
+    (detailJson.items || []).forEach(v => { detailMap[v.id] = v; });
+    const items = json.items.map(item => {
+      const vid = item.id && item.id.videoId || '';
+      if (!vid) return null;
+      const detail = detailMap[vid] || {};
+      const viewers = parseInt((detail.liveStreamingDetails && detail.liveStreamingDetails.concurrentViewers) || '0', 10);
+      const thumb = item.snippet && item.snippet.thumbnails && (item.snippet.thumbnails.high || item.snippet.thumbnails.default);
+      return {
+        id: 'yt_' + vid,
+        tit: ((item.snippet && item.snippet.title) || 'Stream en vivo').slice(0, 60),
+        ch:  (item.snippet && item.snippet.channelTitle) || '',
+        viewers,
+        live: true,
+        em: '📺',
+        plat: 'youtube',
+        url: `https://www.youtube.com/watch?v=${vid}`,
+        thumb: thumb ? thumb.url : null,
+        color: '#FF0000',
+      };
+    }).filter(Boolean);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
+    console.log('YouTube Live OK ' + items.length + ' streams');
+    return items;
+  } catch(e) {
+    console.warn('YouTube Live ERROR:', e.message);
+    return [];
+  }
+}
+
+async function fetchKickChannel(canal) {
+  const PROXY = url => 'https://corsproxy.io/?' + encodeURIComponent(url);
+  const timeout = ms => new Promise((_,rej) => setTimeout(()=>rej(new Error('timeout')),ms));
+  const fetchT  = (url,ms) => Promise.race([fetch(url), timeout(ms)]);
+  try {
+    const resp = await fetchT(PROXY('https://kick.com/api/v2/channels/' + canal.slug), 8000);
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    const ls = data.livestream;
+    if (!ls || !ls.is_live) return null;
+    return {
+      id: 'kick_' + canal.slug,
+      tit: ((ls.session_title || canal.nombre + ' en vivo')).slice(0, 60),
+      ch:  canal.nombre,
+      viewers: ls.viewer_count || 0,
+      live: true,
+      em: canal.em,
+      plat: 'kick',
+      url: 'https://kick.com/' + canal.slug,
+      thumb: ls.thumbnail && ls.thumbnail.src || null,
+      color: canal.color,
+    };
+  } catch(e) {
+    return null;
+  }
+}
+
+async function fetchKickLive() {
+  const CACHE_KEY = 'tl_kick_streams';
+  const CACHE_TTL = 5 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < CACHE_TTL && Array.isArray(data)) return data;
+    }
+  } catch(e) {}
+  const results = await Promise.allSettled(KICK_CANALES.map(c => fetchKickChannel(c)));
+  const items = results.filter(r => r.status === 'fulfilled' && r.value).map(r => r.value);
+  try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
+  console.log('Kick Live OK ' + items.length + ' canales en vivo');
+  return items;
+}
+
+async function fetchAllStreams() {
+  const [ytStreams, kickStreams] = await Promise.all([fetchYouTubeLive(), fetchKickLive()]);
+  const all = [...ytStreams, ...kickStreams];
+  all.sort((a, b) => (b.viewers || 0) - (a.viewers || 0));
+  return all;
+}
+
+
 /* ══════ TheSportsDB — fetcher con caché ══════ */
 const TSDB_BASE = 'https://www.thesportsdb.com/api/v1/json/3';
 const TSDB_LEAGUES = [
@@ -4878,6 +5003,10 @@ function EnVivoPage({ addToast }) {
   const [cargando, setCargando] = useState(false);
   const [fuente, setFuente] = useState('local');
   const [ultimaAct, setUltimaAct] = useState(null);
+  const [liveStreams, setLiveStreams] = useState([]);
+  const [streamsCargando, setStreamsCargando] = useState(false);
+  const [streamsUltimaAct, setStreamsUltimaAct] = useState(null);
+  const [streamsError, setStreamsError] = useState(null);
   const ligas = ['Todas','Liga Profesional','Copa Libertadores','Copa Argentina','Primera Nacional','Rugby','Básquet','Tenis'];
 
   async function cargarDatos() {
@@ -4917,7 +5046,23 @@ function EnVivoPage({ addToast }) {
     setCargando(false);
   }
 
-  useEffect(()=>{ cargarDatos(); },[]);
+  async function cargarStreams() {
+    setStreamsCargando(true);
+    setStreamsError(null);
+    try {
+      const streams = await fetchAllStreams();
+      setLiveStreams(streams);
+      setStreamsUltimaAct(new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}));
+      if (streams.length > 0) {
+        addToast({msg:`📺 ${streams.length} streams en vivo encontrados`, type:'ok'});
+      }
+    } catch(e) {
+      setStreamsError('No se pudieron cargar los streams');
+    }
+    setStreamsCargando(false);
+  }
+
+  useEffect(()=>{ cargarDatos(); cargarStreams(); },[]);
 
   // Formatear hora y fecha desde TheSportsDB
   function formatProximo(p) {
@@ -4947,7 +5092,7 @@ function EnVivoPage({ addToast }) {
         <div style={{flex:1}}>
           <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700}}>En Vivo 🔴</div>
           <div style={{fontSize:11,opacity:.8,display:'flex',alignItems:'center',gap:6}}>
-            <span>{partidos.filter(e=>e.live).length} en vivo · {STREAMS.filter(s=>s.live).length} streams</span>
+            <span>{partidos.filter(e=>e.live).length} en vivo · {liveStreams.length} streams</span>
             {fuente==='thesportsdb' && <span style={{background:'rgba(255,255,255,.15)',borderRadius:8,padding:'1px 7px',fontSize:9,fontWeight:700}}>📡 TheSportsDB{ultimaAct?' · '+ultimaAct:''}</span>}
           </div>
         </div>
@@ -5087,37 +5232,138 @@ function EnVivoPage({ addToast }) {
       {/* ─── STREAMERS ─── */}
       {tab==='streamers' && (
         <div>
-          <div className="sh"><div className="st" style={{color:'var(--red)'}}>🎮 Transmisiones en vivo</div><span className="sl">{STREAMS.filter(s=>s.live).length} activas</span></div>
-          {STREAMS.filter(s=>s.live).map(s=>(
-            <div key={s.id} style={{background:'var(--white)',border:'1.5px solid var(--br)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:10,display:'flex',gap:12,alignItems:'flex-start',transition:'.2s'}}
-              onMouseEnter={e=>{e.currentTarget.style.borderColor=s.color;e.currentTarget.style.boxShadow='var(--sh)';}}
-              onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--br)';e.currentTarget.style.boxShadow='none';}}>
-              <div style={{width:46,height:46,borderRadius:'var(--rs)',background:s.color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20,flexShrink:0}}>{s.em}</div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:'var(--tx)',marginBottom:2}}>{s.tit}</div>
-                <div style={{fontSize:11,color:'var(--tx2)',marginBottom:5}}>{s.ch}</div>
-                <div style={{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}}>
-                  <span style={{fontSize:10,color:'var(--red)',fontWeight:700,display:'flex',alignItems:'center',gap:3}}>
-                    <span style={{width:6,height:6,borderRadius:'50%',background:'var(--red)',display:'inline-block'}}/>EN VIVO
-                  </span>
-                  <span style={{fontSize:10,color:'var(--tx3)'}}>👥 {s.viewers.toLocaleString()} viendo</span>
-                  <span style={{fontSize:10,fontWeight:700,padding:'2px 7px',borderRadius:8,background:s.plat==='twitch'?'rgba(145,70,255,.12)':'rgba(255,0,0,.1)',color:s.plat==='twitch'?'#9146FF':'#CC0000'}}>
-                    {s.plat==='twitch'?'Twitch':'YouTube'}
-                  </span>
-                </div>
+          {/* Header */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
+            <div>
+              <div className="st" style={{color:'var(--red)',marginBottom:2}}>🎮 Transmisiones en vivo</div>
+              <div style={{fontSize:10,color:'var(--tx3)'}}>
+                {streamsCargando ? '⟳ Buscando streams…' : liveStreams.length > 0 ? `${liveStreams.length} streams activos${streamsUltimaAct?' · Actualizado '+streamsUltimaAct:''}` : 'Sin streams detectados en este momento'}
               </div>
-              <a href={s.url} target="_blank" rel="noopener" className="btn btn-sm" style={{fontSize:10,color:s.color,borderColor:s.color,flexShrink:0}}>Ver →</a>
             </div>
-          ))}
-          {STREAMS.filter(s=>!s.live).map(s=>(
-            <div key={s.id} style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:8,display:'flex',gap:10,alignItems:'center',opacity:.7}}>
-              <div style={{width:36,height:36,borderRadius:'var(--rs)',background:'var(--br)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,flexShrink:0}}>{s.em}</div>
-              <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600,color:'var(--tx)'}}>{s.tit}</div><div style={{fontSize:10,color:'var(--tx3)'}}>{s.ch} · {s.viewers.toLocaleString()} total</div></div>
+            <button onClick={cargarStreams} disabled={streamsCargando}
+              style={{background:'var(--white)',border:'1.5px solid var(--br)',borderRadius:20,padding:'5px 13px',fontSize:11,fontWeight:700,color:'var(--tx2)',cursor:'pointer',flexShrink:0,transition:'.2s'}}
+              onMouseEnter={e=>{e.currentTarget.style.borderColor='var(--red)';e.currentTarget.style.color='var(--red)';}}
+              onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--br)';e.currentTarget.style.color='var(--tx2)';}}>
+              ⟳ Actualizar
+            </button>
+          </div>
+
+          {/* Badges de plataforma */}
+          <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
+            {[
+              {p:'youtube', label:'YouTube', bg:'rgba(255,0,0,.1)', col:'#CC0000'},
+              {p:'kick',    label:'Kick',    bg:'rgba(83,185,76,.12)', col:'#219653'},
+            ].map(b => {
+              const count = liveStreams.filter(s=>s.plat===b.p).length;
+              return (
+                <div key={b.p} style={{padding:'3px 10px',borderRadius:12,background:b.bg,fontSize:11,fontWeight:700,color:b.col,display:'flex',alignItems:'center',gap:5}}>
+                  <span style={{width:6,height:6,borderRadius:'50%',background:b.col,display:'inline-block'}}/>
+                  {b.label} — {count} en vivo
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Aviso si no hay API key */}
+          {(!window.YOUTUBE_KEY || window.YOUTUBE_KEY==='TU_YOUTUBE_API_KEY_AQUI') && (
+            <div style={{background:'rgba(246,180,14,.08)',border:'1px solid rgba(246,180,14,.35)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:14,fontSize:12}}>
+              <div style={{fontWeight:700,color:'#92400E',marginBottom:3}}>⚠️ YouTube API Key no configurada</div>
+              <div style={{color:'#B45309',lineHeight:1.5}}>Agregá tu key en la línea <code style={{background:'rgba(0,0,0,.06)',padding:'1px 5px',borderRadius:3}}>window.YOUTUBE_KEY</code> del HTML para ver streams reales de YouTube. Kick se carga igualmente.</div>
             </div>
-          ))}
-          <div style={{background:'rgba(8,145,178,.07)',border:'1px solid rgba(8,145,178,.25)',borderRadius:'var(--r)',padding:'10px 14px',marginTop:8}}>
-            <div style={{fontSize:12,fontWeight:600,color:'var(--teal)',marginBottom:3}}>🔗 Próximamente — Fase 2</div>
-            <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.5}}>Twitch API + YouTube Data API para streamers deportivos en vivo automáticos.</div>
+          )}
+
+          {/* Loading */}
+          {streamsCargando && (
+            <div style={{textAlign:'center',padding:30,color:'var(--tx3)'}}>
+              <div style={{fontSize:28,marginBottom:8,animation:'pulse 1.4s infinite'}}>📺</div>
+              <div style={{fontSize:13,fontWeight:600}}>Buscando transmisiones en vivo…</div>
+              <div style={{fontSize:11,marginTop:4}}>YouTube · Kick</div>
+            </div>
+          )}
+
+          {/* Error */}
+          {streamsError && !streamsCargando && (
+            <div style={{background:'rgba(239,68,68,.07)',border:'1px solid rgba(239,68,68,.2)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:12,fontSize:12,color:'#B91C1C'}}>{streamsError}</div>
+          )}
+
+          {/* Lista de streams en vivo (API) */}
+          {!streamsCargando && liveStreams.length > 0 && (
+            <div style={{display:'grid',gap:10,marginBottom:16}}>
+              {liveStreams.map(s => (
+                <div key={s.id} style={{background:'var(--white)',border:'1.5px solid var(--br)',borderRadius:'var(--r)',overflow:'hidden',transition:'.2s'}}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=s.color;e.currentTarget.style.boxShadow='var(--sh)';}}
+                  onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--br)';e.currentTarget.style.boxShadow='none';}}>
+                  <div style={{display:'flex',gap:12,padding:'12px 14px',alignItems:'flex-start'}}>
+                    {/* Thumbnail o emoji */}
+                    {s.thumb
+                      ? <img src={s.thumb} alt="" style={{width:80,height:45,borderRadius:6,objectFit:'cover',flexShrink:0,border:'1px solid var(--br)'}} onError={e=>{e.target.style.display='none';}}/>
+                      : <div style={{width:80,height:45,borderRadius:6,background:s.color+'22',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0,border:'1px solid '+s.color+'44'}}>{s.em}</div>
+                    }
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:'var(--tx)',marginBottom:2,lineHeight:1.3,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{s.tit}</div>
+                      <div style={{fontSize:11,color:'var(--tx2)',marginBottom:6}}>{s.ch}</div>
+                      <div style={{display:'flex',alignItems:'center',gap:7,flexWrap:'wrap'}}>
+                        <span style={{fontSize:9,fontWeight:800,color:'white',background:'var(--red)',padding:'2px 7px',borderRadius:8,display:'flex',alignItems:'center',gap:3}}>
+                          <span style={{width:5,height:5,borderRadius:'50%',background:'white',display:'inline-block',animation:'pulse 1.4s infinite'}}/>EN VIVO
+                        </span>
+                        {s.viewers > 0 && <span style={{fontSize:10,color:'var(--tx3)'}}>👥 {s.viewers.toLocaleString()}</span>}
+                        <span style={{fontSize:10,fontWeight:700,padding:'2px 8px',borderRadius:8,
+                          background: s.plat==='youtube'?'rgba(255,0,0,.1)': s.plat==='kick'?'rgba(83,185,76,.12)':'rgba(145,70,255,.12)',
+                          color:       s.plat==='youtube'?'#CC0000':            s.plat==='kick'?'#219653':            '#9146FF'}}>
+                          {s.plat==='youtube'?'▶ YouTube': s.plat==='kick'?'⚡ Kick':'🟣 Twitch'}
+                        </span>
+                      </div>
+                    </div>
+                    <a href={s.url} target="_blank" rel="noopener"
+                      style={{flexShrink:0,padding:'6px 12px',borderRadius:20,border:'1.5px solid '+s.color,color:s.color,fontSize:11,fontWeight:700,textDecoration:'none',background:'transparent',cursor:'pointer',transition:'.2s',whiteSpace:'nowrap',alignSelf:'center'}}
+                      onMouseEnter={e=>{e.currentTarget.style.background=s.color;e.currentTarget.style.color='white';}}
+                      onMouseLeave={e=>{e.currentTarget.style.background='transparent';e.currentTarget.style.color=s.color;}}>
+                      Ver →
+                    </a>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Sin streams activos */}
+          {!streamsCargando && liveStreams.length === 0 && (
+            <div style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:24,textAlign:'center',marginBottom:14}}>
+              <div style={{fontSize:32,marginBottom:8}}>📡</div>
+              <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:600,color:'var(--tx)',marginBottom:4}}>Sin transmisiones activas ahora</div>
+              <div style={{fontSize:12,color:'var(--tx2)',marginBottom:14,lineHeight:1.5}}>No hay streams de deportes argentinos en vivo en este momento en YouTube ni Kick.</div>
+              <button onClick={cargarStreams} className="btn btn-sm">⟳ Volver a buscar</button>
+            </div>
+          )}
+
+          {/* Canales fijos de Kick (siempre visibles como acceso directo) */}
+          <div style={{marginTop:4}}>
+            <div style={{fontSize:11,fontWeight:700,color:'var(--tx3)',letterSpacing:.5,textTransform:'uppercase',marginBottom:8}}>📌 Canales directos — Kick</div>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(140px,1fr))',gap:7}}>
+              {KICK_CANALES.map(c => {
+                const activo = liveStreams.find(s=>s.id==='kick_'+c.slug);
+                return (
+                  <a key={c.slug} href={'https://kick.com/'+c.slug} target="_blank" rel="noopener"
+                    style={{display:'flex',alignItems:'center',gap:8,padding:'8px 10px',borderRadius:'var(--rs)',border:'1px solid '+(activo?c.color:'var(--br)'),background:activo?c.color+'11':'var(--white)',textDecoration:'none',transition:'.2s'}}
+                    onMouseEnter={e=>{e.currentTarget.style.borderColor=c.color;e.currentTarget.style.background=c.color+'11';}}
+                    onMouseLeave={e=>{e.currentTarget.style.borderColor=activo?c.color:'var(--br)';e.currentTarget.style.background=activo?c.color+'11':'var(--white)';}}>
+                    <span style={{fontSize:18}}>{c.em}</span>
+                    <div>
+                      <div style={{fontSize:11,fontWeight:700,color:'var(--tx)',lineHeight:1.2}}>{c.nombre}</div>
+                      {activo
+                        ? <div style={{fontSize:9,color:c.color,fontWeight:700}}>🔴 EN VIVO</div>
+                        : <div style={{fontSize:9,color:'var(--tx3)'}}>⚡ kick.com</div>
+                      }
+                    </div>
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Info footer */}
+          <div style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 12px',marginTop:14,fontSize:10,color:'var(--tx3)',lineHeight:1.6}}>
+            📺 YouTube actualiza automáticamente · ⚡ Kick vía API pública (experimental) · 🟣 Twitch próximamente
           </div>
         </div>
       )}
