@@ -4559,7 +4559,8 @@ function IAModuleWidget() {
         })
       }).finally(() => clearTimeout(tId));
       const data = await resp.json();
-      const texto = data.content?.[0]?.text || 'No se pudo cargar el contenido.';
+      const texto = data.content?.[0]?.text;
+      if (!texto) throw new Error('proxy-sin-respuesta');
       setContent({ tipo, texto, label: TIPO_LABELS[tipo] });
       setLastFetch(new Date());
     } catch(e) {
