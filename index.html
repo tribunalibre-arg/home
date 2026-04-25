@@ -89,6 +89,46 @@ window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key 
 // Creá una API Key (no OAuth) en Credenciales y pegala acá.
 window.YOUTUBE_KEY = 'TU_YOUTUBE_API_KEY_AQUI';  // ← reemplazá con tu key
 
+// ── NewsData.io — imágenes garantizadas, 200 req/día gratis ──────────────
+// Registrate sin tarjeta en https://newsdata.io
+window.NEWSDATA_KEY = 'TU_NEWSDATA_KEY_AQUI';  // ← PEGÁ ACÁ TU KEY DE NEWSDATA.IO
+
+window.fetchNewsData = async function() {
+  const key = window.NEWSDATA_KEY;
+  if (!key || key === 'TU_NEWSDATA_KEY_AQUI') return [];
+  const CACHE_KEY = 'tl_newsdata';
+  const CACHE_TTL = 15 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length) return data;
+    }
+  } catch(e) {}
+  try {
+    const url = `https://newsdata.io/api/1/news?apikey=${key}&country=ar&category=sports&language=es`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('NewsData HTTP ' + resp.status);
+    const json = await resp.json();
+    if (!Array.isArray(json.results)) throw new Error('NewsData: sin resultados');
+    const items = json.results.map((a,i) => ({
+      _id: 'nd_' + i + '_' + (a.article_id||'').slice(-12),
+      title: a.title || '',
+      excerpt: (a.description || '').slice(0, 220),
+      publishedAt: a.pubDate || new Date().toISOString(),
+      coverImage: a.image_url || null,
+      cat: 'Deportes', category: 'Deportes',
+      meta: { sourceName: a.source_id || 'NewsData', sourceUrl: a.link || '#' }
+    })).filter(a => a.title && a.coverImage);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
+    console.log('NewsData.io: ' + items.length + ' noticias con imagen');
+    return items;
+  } catch(e) {
+    console.warn('NewsData.io:', e.message);
+    return [];
+  }
+};
+
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
   if (!key) return [];  // sin key, saltar silenciosamente
