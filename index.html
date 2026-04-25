@@ -22,7 +22,8 @@ window.SUPABASE_ANON = 'sb_publishable_uGtX_3HBT1Aduy4s2N5WrA_3QjonanT';
 // ANTHROPIC API KEY — necesaria para Trivia IA y módulo IA
 // Obtené la tuya en: https://console.anthropic.com/keys
 // ═══════════════════════════════════════════════════════════
-window.ANTHROPIC_KEY = '';
+// La key Anthropic vive en Supabase Edge Functions Secrets (nunca en este archivo).
+window.CLAUDE_PROXY = window.SUPABASE_URL + '/functions/v1/claude-proxy';
 
 window.__supabase = null;  // se inicializa cuando cargue el SDK
 
@@ -86,7 +87,7 @@ window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key 
 // ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
 // Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
 // Creá una API Key (no OAuth) en Credenciales y pegala acá.
-window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplazá con tu key
+window.YOUTUBE_KEY = 'TU_YOUTUBE_API_KEY_AQUI';  // ← reemplazá con tu key
 
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
@@ -1107,17 +1108,20 @@ function useNews(page=1, cat='', search='') {
     Promise.all([
       // GNews primero (tiene imágenes reales)
       (window.fetchGNews ? window.fetchGNews() : Promise.resolve([])),
+      // NewsData.io — imagenes garantizadas (200 req/dia gratis)
+      (window.fetchNewsData ? window.fetchNewsData() : Promise.resolve([])),
       // RSS feeds en paralelo
       ...((window.RSS_FEEDS || []).map(f =>
         window.fetchRSSFeed(f.url, f.name).then(items => ({ name: f.name, count: items.length, items }))
       ))
-    ]).then(([gnewsItems, ...results]) => {
+    ]).then(([gnewsItems, newsDataItems, ...results]) => {
       const feedStatus = results.map(r => ({ name: r.name, count: r.count }));
       const rssItems   = results.flatMap(r => r.items);
-      // Combinar: GNews (con imagen) + RSS, deduplicar por título similar
-      const gnewsTitles = new Set(gnewsItems.map(a => a.title.slice(0,40).toLowerCase()));
+      // Combinar: GNews + NewsData (ambos con imagen) + RSS, deduplicar
+      const withImg = [...gnewsItems, ...(newsDataItems||[])];
+      const gnewsTitles = new Set(withImg.map(a => a.title.slice(0,40).toLowerCase()));
       const dedupRss    = rssItems.filter(a => !gnewsTitles.has(a.title.slice(0,40).toLowerCase()));
-      let allPosts = [...gnewsItems, ...dedupRss].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
+      let allPosts = [...withImg, ...dedupRss].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
       const limit = 18;
@@ -4487,19 +4491,16 @@ function IAModuleWidget() {
     try {
       const ctrl = new AbortController();
       const tId = setTimeout(() => ctrl.abort(), 10000);
-      const apiKey = window.ANTHROPIC_KEY || '';
-      if(!apiKey || apiKey === 'TU_API_KEY_AQUI') throw new Error('sin-key');
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      const proxyUrl = window.CLAUDE_PROXY || '';
+      if(!proxyUrl || !window.SUPABASE_ANON) throw new Error('sin-key');
+      const resp = await fetch(proxyUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-          'anthropic-dangerous-direct-browser-access': 'true'
+          'Authorization': 'Bearer ' + window.SUPABASE_ANON
         },
         signal: ctrl.signal,
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
           max_tokens: 200,
           messages: [{ role: 'user', content: prompts[tipo] }],
         })
@@ -4554,15 +4555,29 @@ function AuthModal({ onClose, onLogin, addToast }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr]     = useState('');
 
-  async function handleGoogle() {
+  const _safeOrigin = () => (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('chrome-error') && window.location.protocol !== 'file:') ? window.location.href.split('?')[0] : 'https://tribunalibre-arg.github.io/home/';
+
+  async function handleGitHub() {
     if (!window.__supabase) { addToast({msg:'Supabase no configurado — usá email',type:'err'}); return; }
     setLoading(true); setErr('');
     try {
-      const _safeOrigin = (window.location.origin && window.location.origin !== 'null' && !window.location.origin.startsWith('chrome-error') && window.location.protocol !== 'file:') ? window.location.href.split('?')[0] : 'https://tribunalibre-arg.github.io/home/';
-      const { data, error } = await window.__supabase.auth.signInWithOAuth({ provider:'google', options:{redirectTo:_safeOrigin} });
+      const { error } = await window.__supabase.auth.signInWithOAuth({ provider:'github', options:{redirectTo:_safeOrigin()} });
       if (error) throw error;
-      addToast({msg:'¡Redirigiendo a Google...! 🇦🇷',type:'ok'}); onClose();
-    } catch(e) { setErr(e.message||'Error con Google'); }
+      addToast({msg:'Redirigiendo a GitHub... 🇦🇷',type:'ok'}); onClose();
+    } catch(e) { setErr(e.message||'Error con GitHub'); }
+    setLoading(false);
+  }
+
+  async function handleMagicLink(e) {
+    e.preventDefault(); setLoading(true); setErr('');
+    try {
+      if (!window.__supabase) throw new Error('sin-backend');
+      if (!email) throw new Error('Ingresá tu email');
+      const { error } = await window.__supabase.auth.signInWithOtp({ email, options:{ emailRedirectTo: _safeOrigin() } });
+      if (error) throw error;
+      addToast({msg:'✅ Revisá tu email — te enviamos el link para entrar',type:'ok'});
+      onClose();
+    } catch(e) { setErr(e.message||'Error al enviar el link'); }
     setLoading(false);
   }
 
@@ -4614,7 +4629,12 @@ function AuthModal({ onClose, onLogin, addToast }) {
           <div className={`atab${tab==='reg'?' on':''}`} onClick={()=>{setTab('reg');setErr('');}}>Registrarse</div>
         </div>
         {err && <div className="err-msg">⚠️ {err}</div>}
-        <button className="soc-btn" onClick={handleGoogle} disabled={loading}><span style={{fontSize:18}}>🔵</span> Continuar con Google</button>
+        <button className="soc-btn" onClick={handleGitHub} disabled={loading} style={{background:'#24292e',color:'white',border:'none',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:8,width:'100%',justifyContent:'center',marginBottom:8}}>
+          <span style={{fontSize:18}}>🐙</span> Continuar con GitHub
+        </button>
+        <button className="soc-btn" onClick={handleMagicLink} disabled={loading} style={{background:'#EFF6FF',color:'#1D4ED8',border:'1px solid #BFDBFE',borderRadius:8,padding:'10px 16px',fontSize:13,fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:8,width:'100%',justifyContent:'center',marginBottom:8}}>
+          <span style={{fontSize:18}}>✉️</span> Magic Link — solo con tu email (sin contraseña)
+        </button>
         <div className="or-div">o con tu correo</div>
         <div>
           {tab==='reg' && (
