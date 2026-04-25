@@ -77,6 +77,17 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 //
 // FALLBACK: 3 proxies CORS + parsing XML propio
 // ═══════════════════════════════════════════════════════════
+// ── Cache version — cambiá el número si querés forzar re-fetch de noticias ──
+(function bustCache() {
+  var CACHE_VERSION = 'v4';
+  var stored = localStorage.getItem('tl_cache_version');
+  if (stored !== CACHE_VERSION) {
+    ['tl_gnews','tl_newsdata','tl_rss_cache'].forEach(function(k){ try{localStorage.removeItem(k);}catch(e){} });
+    try { localStorage.setItem('tl_cache_version', CACHE_VERSION); } catch(e) {}
+    console.log('Cache de noticias limpiada (nueva versión)');
+  }
+})();
+
 window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá tu key de rss2json.com (opcional pero recomendado)
 
 // ── GNews API — imágenes reales garantizadas ─────────────────────────────
@@ -131,7 +142,7 @@ window.fetchNewsData = async function() {
 
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
-  if (!key) return [];  // sin key, saltar silenciosamente
+  if (!key || key === 'TU_GNEWS_KEY_AQUI') return [];  // sin key, saltar silenciosamente
 
   const CACHE_KEY = 'tl_gnews';
   const CACHE_TTL = 15 * 60 * 1000;
@@ -166,7 +177,7 @@ window.fetchGNews = async function() {
       cat:         'Deportes',
       category:    'Deportes',
       meta:        { sourceName: a.source?.name || 'GNews', sourceUrl: a.url || '#' }
-    })).filter(a => a.title);
+    })).filter(a => a.title && a.coverImage);
 
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
     console.log(`GNews ✓ (${items.length} artículos con imagen)`);
@@ -1152,7 +1163,7 @@ function useNews(page=1, cat='', search='') {
       (window.fetchNewsData ? window.fetchNewsData() : Promise.resolve([])),
       // RSS feeds en paralelo
       ...((window.RSS_FEEDS || []).map(f =>
-        window.fetchRSSFeed(f.url, f.name).then(items => ({ name: f.name, count: items.length, items }))
+        (window.fetchRSSFeed ? window.fetchRSSFeed(f.url, f.name) : Promise.resolve([])).then(items => ({ name: f.name, count: (items||[]).length, items: items||[] }))
       ))
     ]).then(([gnewsItems, newsDataItems, ...results]) => {
       const feedStatus = results.map(r => ({ name: r.name, count: r.count }));
@@ -1169,6 +1180,8 @@ function useNews(page=1, cat='', search='') {
       const pages = Math.max(1, Math.ceil(total / limit));
       const pagePosts = allPosts.slice((page-1)*limit, page*limit);
       if (pagePosts.length > 0) {
+        const conImg = pagePosts.filter(p=>p.coverImage).length;
+        console.log(`Noticias cargadas: ${pagePosts.length} total, ${conImg} con imagen`);
         safe(setState)({ posts: pagePosts, total, pages, loading: false, fromApi: true, feedStatus });
         // Enriquecer artículos sin imagen con OG images de forma progresiva
         window.enrichArticlesWithImages && window.enrichArticlesWithImages(pagePosts, (updates) => {
