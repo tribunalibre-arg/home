@@ -104,6 +104,16 @@ window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplaz
 // Registrate sin tarjeta en https://newsdata.io
 window.NEWSDATA_KEY = 'pub_b6a0630b0e984891bb8836a1605fc699';  // ← PEGÁ ACÁ TU KEY DE NEWSDATA.IO
 
+// ── FOOTBALL-DATA.ORG — Europa (CL, La Liga, Premier, Serie A, etc.) ─────
+// Registrate en https://www.football-data.org/client/register
+// Free tier: Champions League, La Liga, Premier, Bundesliga, Serie A, Ligue 1, etc.
+window.FOOTBALL_DATA_KEY = 'e610b34868b64523af8034caf0ad7b90';  // ← pegá tu API key de football-data.org
+
+// ── RAPIDAPI (API-Football) — Argentina + Libertadores + Mundial ──────────
+// Suscribite en https://rapidapi.com/api-sports/api/api-football
+// Plan Free: 100 req/día. Cubre Liga Profesional, Libertadores, Primera Nacional.
+window.RAPIDAPI_KEY = 'a84e60f8femshaedc7c87782e00dp158566jsn00f4abcada7f';  // ← pegá tu API key de RapidAPI
+
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
   if (!key || key === 'TU_NEWSDATA_KEY_AQUI') return [];
@@ -2876,243 +2886,946 @@ function StreamingPage({ addToast }) {
 }
 
 /* ══════ LA TRIBU PREDICE ══════ */
+
+
 function ProdePage({ user, addToast }) {
-  const [tab, setTab]       = useState('pronosticos');
-  const [picks, setPicks]   = useState({});
-  const [submitted, setSubmitted] = useState(false);
-  const [quinPick, setQuinPick]   = useState({});
-  const [desafio, setDesafio]     = useState(null);
-  const [sbRanking, setSbRanking] = useState([]);
-  const totalPicked = Object.keys(picks).length;
+  const isAdmin = user && (user.role === 'admin' || user.email === 'tribunalibre@gmail.com');
+  const sb = window.__supabase;
 
-  useEffect(()=>{
-    async function cargarRanking(){
-      const sb=window.__supabase;
-      if(!sb) return;
-      try{
-        const {data}=await sb.from('prode_ranking').select('*').order('aciertos',{ascending:false}).limit(10);
-        if(data && data.length>0) setSbRanking(data);
-      }catch(e){}
-    }
-    cargarRanking();
-  },[]);
+  // ── Estado principal ──
+  const [tab,          setTab]         = useState('predecir');
+  const [competencias, setComp]        = useState([]);
+  const [compActiva,   setCompActiva]  = useState(null);
+  const [temporadas,   setTemps]       = useState([]);
+  const [tempActiva,   setTempActiva]  = useState(null);
+  const [partidos,     setPartidos]    = useState([]);
+  const [picks,        setPicks]       = useState({});
+  const [enviando,     setEnviando]    = useState(false);
+  const [enviado,      setEnviado]     = useState({});
+  const [ranking,      setRanking]     = useState([]);
+  const [misLogros,    setMisLogros]   = useState([]);
+  const [logros,       setLogros]      = useState([]);
+  const [cargando,     setCargando]    = useState(true);
+  const [cargandoFix,  setCargandoFix] = useState(false);
+  const [config,       setConfig]      = useState({});
+  const [favEquipos,   setFavEquipos]  = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tl_fav_equipos') || '[]'); } catch { return []; }
+  });
+  const [buscandoEq,   setBuscandoEq]  = useState('');
 
-  function pick(id, r) { if (!submitted) setPicks(p => ({...p,[id]:r})); }
-  async function submit() {
-    if (totalPicked < PRODE_MATCHES.length) { addToast({msg:'Completá todas las predicciones antes de enviar',type:'err'}); return; }
-    if (!user || user.isGuest) { addToast({msg:'Necesitás registrarte para guardar tus predicciones 🔒',type:'err'}); return; }
-    const sb = window.__supabase;
-    if(sb){
-      try{
-        const {data:sess}=await sb.auth.getSession();
-        const uid=sess?.session?.user?.id;
-        const uname=user?.displayName||'Anónimo';
-        const rows=Object.entries(picks).map(([partido_id,pick])=>({user_id:uid,partido_id,username:uname,pick}));
-        const {error}=await sb.from('prode_picks').upsert(rows,{onConflict:'user_id,partido_id'});
-        if(error) throw error;
-        await sb.from('prode_ranking').upsert({user_id:uid,username:uname,aciertos:0},{onConflict:'user_id'});
-        addToast({msg:'¡Predicciones guardadas para todos! ¡Mucha suerte! 🏆',type:'ok'});
-      }catch(e){ addToast({msg:'Error: '+e.message,type:'err'}); return; }
-    } else {
-      addToast({msg:'¡Predicciones guardadas! ¡Mucha suerte! 🏆',type:'ok'});
-    }
-    setSubmitted(true);
+  // ── Admin ──
+  const [adminTab,      setAdminTab]  = useState('partidos');
+  const [formPartido,   setFormP]     = useState({ local:'', visitante:'', fecha:'', fase:'grupos', jornada:'', zona:'' });
+  const [formResultado, setFormR]     = useState({ partido_id:'', gl:'', gv:'' });
+  const [formTemp,      setFormT]     = useState({ nombre:'', fecha_inicio:'', fecha_fin:'' });
+  const [importando,    setImportando]= useState(false);
+  const [importLog,     setImportLog] = useState([]);
+
+  // ── Configuración de fuentes de fixture ──────────────────────────────────
+  // source: 'fdorg'    → football-data.org  (Europa: CL, La Liga, Premier…)
+  // source: 'rapidapi' → API-Football/RapidAPI (Argentina, Libertadores, Mundial…)
+  // ─────────────────────────────────────────────────────────────────────────
+  const API_COMPS = {
+    // ── ARGENTINA ────────────────────────────────────────────────────────
+    'liga-profesional':  { source:'rapidapi', id:128,  season:2025, nombre:'Liga Profesional 2025' },
+    'copa-libertadores': { source:'rapidapi', id:13,   season:2025, nombre:'Copa Libertadores 2025' },
+    'primera-nacional':  { source:'rapidapi', id:131,  season:2025, nombre:'Primera Nacional 2025' },
+    'copa-argentina':    { source:'rapidapi', id:130,  season:2025, nombre:'Copa Argentina 2025' },
+    // ── EUROPA ───────────────────────────────────────────────────────────
+    'champions-league':  { source:'fdorg',   id:'CL',  season:2024, nombre:'Champions League 2024-25' },
+    'europa-league':     { source:'fdorg',   id:'EL',  season:2024, nombre:'Europa League 2024-25' },
+    'la-liga':           { source:'fdorg',   id:'PD',  season:2024, nombre:'La Liga 2024-25' },
+    'premier-league':    { source:'fdorg',   id:'PL',  season:2024, nombre:'Premier League 2024-25' },
+    'serie-a':           { source:'fdorg',   id:'SA',  season:2024, nombre:'Serie A 2024-25' },
+    'bundesliga':        { source:'fdorg',   id:'BL1', season:2024, nombre:'Bundesliga 2024-25' },
+    // ── MUNDIAL ──────────────────────────────────────────────────────────
+    'mundial-2026':      { source:'rapidapi', id:1,    season:2026, nombre:'Copa del Mundo 2026' },
+  };
+  // Mantener alias para compatibilidad con código existente
+  const TSDB_IDS = API_COMPS;
+
+  const COMP_EMOJI = {
+    'liga-profesional':'⚽','copa-libertadores':'🌎','primera-nacional':'🥈',
+    'copa-argentina':'🏆','champions-league':'👑','europa-league':'🟠',
+    'la-liga':'🇪🇸','premier-league':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','serie-a':'🇮🇹','bundesliga':'🇩🇪',
+    'mundial-2026':'🌍'
+  };
+
+  // ── Equipos conocidos por competencia para el selector de favoritos ──
+  const EQUIPOS_CONOCIDOS = {
+    'liga-profesional': ['River','Boca','Racing','San Lorenzo','Independiente','Vélez','Huracán','Lanús','Estudiantes','Gimnasia','Belgrano','Talleres','Newell\'s','Rosario Central'],
+    'copa-libertadores': ['River','Boca','Racing','Flamengo','Fluminense','Palmeiras','Atlético MG','Junior','LDU','Olimpia','Cerro Porteño','Peñarol','Nacional','Colo-Colo'],
+    'champions-league': ['Real Madrid','Bayern Munich','Manchester City','PSG','Arsenal','Liverpool','Barcelona','Atlético Madrid','Inter','Juventus','Borussia','Chelsea','Porto','Benfica'],
+    'europa-league': ['Atalanta','Roma','Fiorentina','Villarreal','Bayer Leverkusen','Lyon','Ajax','PSV','Rangers','Fenerbahçe','West Ham','Sevilla'],
+    'primera-nacional': ['Instituto','Estudiantes BA','Belgrano B','Quilmes','Atlanta','Deportivo Madryn','San Martín SJ'],
+    'copa-argentina': ['River','Boca','Racing','San Lorenzo','Independiente','Vélez','Belgrano','Talleres'],
+    'mundial-2026': ['Argentina','Brasil','Francia','Inglaterra','España','Alemania','Portugal','Uruguay','Colombia','México','EEUU','Marruecos'],
+  };
+
+  // ── Efectos ──
+  useEffect(() => { cargarTodo(); }, []);
+  useEffect(() => { if (compActiva) cargarTemporadasYFixture(compActiva); }, [compActiva]);
+  useEffect(() => { if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); } }, [tempActiva]);
+
+  // ── Guardar favoritos en localStorage ──
+  function toggleFavorito(eq) {
+    setFavEquipos(prev => {
+      const next = prev.includes(eq) ? prev.filter(e=>e!==eq) : prev.length >= 5 ? prev : [...prev, eq];
+      try { localStorage.setItem('tl_fav_equipos', JSON.stringify(next)); } catch {}
+      return next;
+    });
   }
 
-  const ACIERTOS = [
-    {u:'El_Pibe_10',pts:87,em:'🥇',color:'#F59E0B'},{u:'PumasFan',pts:74,em:'🥈',color:'#9CA3AF'},
-    {u:'Gonzalo_TL',pts:68,em:'🥉',color:'#B45309'},{u:'ColapintoAR',pts:61,em:'⭐',color:'var(--cel)'},
-    {u:'RiverMiAmor',pts:55,em:'⭐',color:'var(--cel)'},
+  // ── Carga inicial ──
+  async function cargarTodo() {
+    setCargando(true);
+    if (!sb) { setCargando(false); return; }
+    try {
+      const [{ data: comps }, { data: cfg }, { data: lg }] = await Promise.all([
+        sb.from('prode_competencias').select('*').eq('activa', true).order('orden'),
+        sb.from('prode_config').select('*'),
+        sb.from('prode_logros').select('*').eq('activo', true),
+      ]);
+      if (comps && comps.length) {
+        setComp(comps);
+        setCompActiva(comps[0].id); // selecciona la primera por defecto
+      }
+      if (cfg) { const m={}; cfg.forEach(r=>{m[r.clave]=r.valor;}); setConfig(m); }
+      if (lg) setLogros(lg);
+      if (user && !user.isGuest) cargarMisLogros();
+    } catch(e) { addToast({ msg:'Error cargando el Prode', type:'err' }); }
+    setCargando(false);
+  }
+
+  // ── Temporadas + auto-import si no hay datos ──
+  async function cargarTemporadasYFixture(cid) {
+    if (!sb) return;
+    const comp = competencias.find(c => c.id === cid) || (await sb.from('prode_competencias').select('*').eq('id',cid).single()).data;
+    const { data: temps } = await sb.from('prode_temporadas').select('*').eq('competencia_id', cid).order('created_at', { ascending: false });
+
+    if (temps && temps.length) {
+      setTemps(temps);
+      const activa = temps.find(t => t.activa) || temps[0];
+      setTempActiva(activa.id);
+    } else {
+      setTemps([]); setTempActiva(null); setPartidos([]);
+      // Auto-importar si tenemos config para esta competencia
+      if (comp && API_COMPS[comp.slug]) {
+        await autoImportar(cid, comp);
+      }
+    }
+  }
+
+  // ── Fetch desde football-data.org (Europa) ────────────────────────────
+  async function fetchDesdeFootballData(compCode, season) {
+    const key = window.FOOTBALL_DATA_KEY;
+    if (!key || key === 'TU_FOOTBALL_DATA_KEY_AQUI') throw new Error('Falta FOOTBALL_DATA_KEY — pegá tu clave en la config del archivo');
+    const url = `https://api.football-data.org/v4/competitions/${compCode}/matches?season=${season}`;
+    const resp = await fetch(url, { headers: { 'X-Auth-Token': key } });
+    if (resp.status === 429) throw new Error('football-data.org: límite de requests (rate limit)');
+    if (!resp.ok) throw new Error(`football-data.org HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (!json.matches) throw new Error('football-data.org: sin partidos en la respuesta');
+    return json.matches.map(m => ({
+      api_id: 'fd_' + m.id,
+      fecha: m.utcDate,
+      local: m.homeTeam?.name || 'TBD',
+      visitante: m.awayTeam?.name || 'TBD',
+      logo_local: m.homeTeam?.crest || null,
+      logo_visitante: m.awayTeam?.crest || null,
+      jornada: m.matchday || null,
+      fase: _faseFD(m.stage),
+      goles_local: m.score?.fullTime?.home ?? null,
+      goles_visitante: m.score?.fullTime?.away ?? null,
+      estado: m.status === 'FINISHED' ? 'finalizado'
+             : ['IN_PLAY','PAUSED','HALFTIME'].includes(m.status) ? 'en_juego'
+             : 'programado',
+      picks_cerrados: m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED',
+    }));
+  }
+
+  function _faseFD(stage) {
+    if (!stage) return 'grupos';
+    const s = stage.toUpperCase();
+    if (s === 'FINAL') return 'final';
+    if (s.includes('SEMI')) return 'semis';
+    if (s.includes('QUARTER')) return 'cuartos';
+    if (s.includes('LAST_16') || s.includes('ROUND_OF_16')) return '16avos';
+    if (s.includes('LAST_32')) return '32avos';
+    if (s.includes('LAST_8') || s.includes('ROUND_OF_8')) return '8vos';
+    return 'grupos';
+  }
+
+  // ── Fetch desde RapidAPI / API-Football (Argentina + Mundial) ────────
+  async function fetchDesdeRapidApi(leagueId, season) {
+    const key = window.RAPIDAPI_KEY;
+    if (!key || key === 'TU_RAPIDAPI_KEY_AQUI') throw new Error('Falta RAPIDAPI_KEY — pegá tu clave en la config del archivo');
+    const url = `https://api-football-v1.p.rapidapi.com/v3/fixtures?league=${leagueId}&season=${season}`;
+    const resp = await fetch(url, {
+      headers: {
+        'x-rapidapi-host': 'api-football-v1.p.rapidapi.com',
+        'x-rapidapi-key': key,
+      }
+    });
+    if (resp.status === 429) throw new Error('RapidAPI: límite diario alcanzado (100 req/día en free tier)');
+    if (!resp.ok) throw new Error(`RapidAPI HTTP ${resp.status}`);
+    const json = await resp.json();
+    if (json.errors && Object.keys(json.errors).length) throw new Error('RapidAPI: ' + Object.values(json.errors)[0]);
+    if (!Array.isArray(json.response)) throw new Error('RapidAPI: respuesta inesperada');
+    return json.response.map(f => {
+      const st = f.fixture?.status?.short || '';
+      const roundStr = f.league?.round || '';
+      return {
+        api_id: 'ra_' + f.fixture.id,
+        fecha: f.fixture.date,
+        local: f.teams?.home?.name || 'TBD',
+        visitante: f.teams?.away?.name || 'TBD',
+        logo_local: f.teams?.home?.logo || null,
+        logo_visitante: f.teams?.away?.logo || null,
+        jornada: roundStr ? parseInt((roundStr.match(/\d+/) || [''])[0]) || null : null,
+        fase: _faseRapi(roundStr),
+        goles_local: f.goals?.home ?? null,
+        goles_visitante: f.goals?.away ?? null,
+        estado: ['FT','AET','PEN'].includes(st) ? 'finalizado'
+               : ['1H','HT','2H','ET','BT','P'].includes(st) ? 'en_juego'
+               : 'programado',
+        picks_cerrados: ['FT','AET','PEN','1H','HT','2H','ET','BT','P'].includes(st),
+      };
+    });
+  }
+
+  function _faseRapi(round) {
+    if (!round) return 'grupos';
+    const r = round.toLowerCase();
+    if (r === 'final' || (r.includes('final') && !r.includes('semi') && !r.includes('quarter') && !r.includes('16') && !r.includes('32'))) return 'final';
+    if (r.includes('semi')) return 'semis';
+    if (r.includes('quarter')) return 'cuartos';
+    if (r.includes('16')) return '16avos';
+    if (r.includes('32')) return '32avos';
+    if (r.includes('8') && !r.includes('16') && !r.includes('32')) return '8vos';
+    return 'grupos';
+  }
+
+  // ── Fetch unificado ────────────────────────────────────────────────────
+  async function fetchFixtureUnificado(slug) {
+    const cfg = API_COMPS[slug];
+    if (!cfg) throw new Error('Competencia no configurada: ' + slug);
+    if (cfg.source === 'fdorg') return fetchDesdeFootballData(cfg.id, cfg.season);
+    if (cfg.source === 'rapidapi') return fetchDesdeRapidApi(cfg.id, cfg.season);
+    throw new Error('Fuente desconocida: ' + cfg.source);
+  }
+
+  // ── Auto-importación silenciosa (sin admin) ──
+  async function autoImportar(cid, comp) {
+    const cfg = API_COMPS[comp.slug];
+    if (!cfg || !sb) return;
+    setCargandoFix(true);
+    try {
+      const eventos = await fetchFixtureUnificado(comp.slug);
+      if (!eventos.length) { setCargandoFix(false); return; }
+
+      const { data: newTemp, error: errTemp } = await sb.from('prode_temporadas').insert({
+        competencia_id: cid, nombre: cfg.nombre, activa: true,
+        fecha_inicio: eventos[0]?.fecha || null,
+        fecha_fin:    eventos[eventos.length-1]?.fecha || null,
+      }).select().single();
+      if (errTemp || !newTemp) { setCargandoFix(false); return; }
+
+      const rows = eventos.map(e => ({
+        temporada_id: newTemp.id, competencia_id: cid, api_id: e.api_id,
+        fecha: e.fecha, local: e.local, visitante: e.visitante,
+        logo_local: e.logo_local, logo_visitante: e.logo_visitante,
+        jornada: e.jornada, fase: e.fase,
+        goles_local: e.goles_local, goles_visitante: e.goles_visitante,
+        estado: e.estado, picks_cerrados: e.picks_cerrados,
+      }));
+      for (let i = 0; i < rows.length; i += 50) {
+        await sb.from('prode_partidos').insert(rows.slice(i, i + 50));
+      }
+      const { data: temps2 } = await sb.from('prode_temporadas').select('*').eq('competencia_id', cid).order('created_at', { ascending: false });
+      if (temps2 && temps2.length) { setTemps(temps2); setTempActiva(newTemp.id); }
+      addToast({ msg: `✅ Fixture cargado: ${rows.length} partidos de ${cfg.nombre}`, type:'ok' });
+    } catch(e) { console.warn('auto-import:', e.message); addToast({ msg: '⚠️ ' + e.message, type:'err' }); }
+    setCargandoFix(false);
+  }
+
+  async function cargarPartidos(tid) {
+    if (!sb) return;
+    const { data } = await sb.from('prode_partidos').select('*').eq('temporada_id', tid).order('fecha');
+    setPartidos(data || []);
+    if (user && !user.isGuest) cargarMisPicks(data || []);
+  }
+
+  async function cargarMisPicks(parts) {
+    if (!sb || !user || user.isGuest || !parts.length) return;
+    const { data: sess } = await sb.auth.getSession();
+    const uid = sess?.session?.user?.id; if (!uid) return;
+    const { data } = await sb.from('prode_picks').select('*').eq('user_id', uid).in('partido_id_nuevo', parts.map(p=>p.id));
+    if (data) { const m={}; data.forEach(p=>{m[p.partido_id_nuevo]={gl:p.goles_local,gv:p.goles_visitante,puntos:p.puntos_obtenidos,calculado:p.calculado};}); setPicks(m); }
+  }
+
+  async function cargarRanking(tid) {
+    if (!sb) return;
+    const { data } = await sb.rpc('get_ranking_temporada', { p_temporada_id: tid, p_limite: 20 });
+    setRanking(data || []);
+  }
+
+  async function cargarMisLogros() {
+    if (!sb || !user || user.isGuest) return;
+    const { data: sess } = await sb.auth.getSession();
+    const uid = sess?.session?.user?.id; if (!uid) return;
+    const { data } = await sb.from('prode_logros_usuario').select('logro_id').eq('user_id', uid);
+    if (data) setMisLogros(data.map(l=>l.logro_id));
+  }
+
+  function detectarFase(e) {
+    const r = (e.strRound||e.intRound||'').toString().toLowerCase();
+    if (r.includes('semi'))    return 'semis';
+    if (r.includes('quarter')) return 'cuartos';
+    if (r.includes('final') && !r.includes('semi') && !r.includes('quarter') && !r.includes('16') && !r.includes('32')) return 'final';
+    if (r.includes('16') || r.includes('round of 16')) return '16avos';
+    if (r.includes('32') || r.includes('round of 32')) return '32avos';
+    if (r.includes('8'))       return '8vos';
+    return 'grupos';
+  }
+
+  // ── Pick ──
+  function setPick(pid, field, val) {
+    if (enviado[pid]) return;
+    setPicks(p=>({...p,[pid]:{...p[pid],[field]:val}}));
+  }
+
+  async function enviarPick(partido) {
+    if (!user || user.isGuest) { addToast({msg:'Iniciá sesión para predecir 🔒',type:'err'}); return; }
+    if (partido.picks_cerrados || partido.estado!=='programado') { addToast({msg:'Los picks están cerrados',type:'err'}); return; }
+    const pick = picks[partido.id];
+    if (pick?.gl===undefined || pick?.gv===undefined || pick?.gl==='' || pick?.gv==='') { addToast({msg:'Ingresá el marcador completo',type:'err'}); return; }
+    setEnviando(true);
+    try {
+      const { data: sess } = await sb.auth.getSession();
+      const uid = sess?.session?.user?.id;
+      const { error } = await sb.from('prode_picks').upsert({
+        user_id: uid, username: user?.displayName||'Anónimo',
+        partido_id_nuevo: partido.id, partido_id: partido.id,
+        goles_local: parseInt(pick.gl), goles_visitante: parseInt(pick.gv),
+      }, { onConflict: 'user_id,partido_id_nuevo' });
+      if (error) throw error;
+      setEnviado(e=>({...e,[partido.id]:true}));
+      addToast({msg:`✅ Pick: ${partido.local} ${pick.gl}-${pick.gv} ${partido.visitante}`,type:'ok'});
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+    setEnviando(false);
+  }
+
+  // ── Admin: resultado ──
+  async function adminCargarResultado(e) {
+    e.preventDefault();
+    if (!formResultado.partido_id||formResultado.gl===''||formResultado.gv==='') { addToast({msg:'Completá todos los campos',type:'err'}); return; }
+    try {
+      await sb.from('prode_partidos').update({ goles_local:parseInt(formResultado.gl), goles_visitante:parseInt(formResultado.gv), estado:'finalizado' }).eq('id',formResultado.partido_id);
+      const { data } = await sb.rpc('calcular_puntos_partido',{p_partido_id:formResultado.partido_id});
+      addToast({msg:`✅ Resultado cargado · ${data} picks calculados`,type:'ok'});
+      setFormR({partido_id:'',gl:'',gv:''});
+      if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); }
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+  }
+
+  async function adminCrearPartido(e) {
+    e.preventDefault();
+    if (!compActiva||!tempActiva) { addToast({msg:'Seleccioná competencia y temporada',type:'err'}); return; }
+    if (!formPartido.local||!formPartido.visitante||!formPartido.fecha) { addToast({msg:'Completá local, visitante y fecha',type:'err'}); return; }
+    try {
+      await sb.from('prode_partidos').insert({ temporada_id:tempActiva, competencia_id:compActiva, local:formPartido.local, visitante:formPartido.visitante, fecha:formPartido.fecha, fase:formPartido.fase, jornada:formPartido.jornada?parseInt(formPartido.jornada):null, zona:formPartido.zona||null, estado:'programado' });
+      addToast({msg:'✅ Partido agregado',type:'ok'});
+      setFormP({local:'',visitante:'',fecha:'',fase:'grupos',jornada:'',zona:''});
+      cargarPartidos(tempActiva);
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+  }
+
+  async function adminCrearTemp(e) {
+    e.preventDefault();
+    if (!compActiva||!formTemp.nombre) { addToast({msg:'Ingresá el nombre',type:'err'}); return; }
+    try {
+      await sb.from('prode_temporadas').insert({ competencia_id:compActiva, nombre:formTemp.nombre, fecha_inicio:formTemp.fecha_inicio||null, fecha_fin:formTemp.fecha_fin||null, activa:true });
+      addToast({msg:`✅ Temporada "${formTemp.nombre}" creada`,type:'ok'});
+      setFormT({nombre:'',fecha_inicio:'',fecha_fin:''});
+      cargarTemporadasYFixture(compActiva);
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+  }
+
+  async function adminImportarFixture() {
+    const comp = competencias.find(c=>c.id===compActiva);
+    if (!comp || !API_COMPS[comp.slug]) { addToast({msg:'Sin configuración de API para esta competencia',type:'err'}); return; }
+    const cfg = API_COMPS[comp.slug];
+    const srcLabel = cfg.source === 'fdorg' ? 'football-data.org' : 'RapidAPI (API-Football)';
+    setImportando(true); setImportLog([`🔄 Conectando a ${srcLabel}...`]);
+    try {
+      const eventos = await fetchFixtureUnificado(comp.slug);
+      if (!eventos.length) { setImportLog(l=>[...l,'⚠️ Sin partidos en la respuesta']); setImportando(false); return; }
+      setImportLog(l=>[...l,`✅ ${eventos.length} partidos recibidos de ${srcLabel}`]);
+
+      const tempExiste = temporadas.find(t=>t.nombre===cfg.nombre);
+      let tid = tempExiste?.id;
+      if (!tid) {
+        const { data: nt, error: et } = await sb.from('prode_temporadas').insert({
+          competencia_id:compActiva, nombre:cfg.nombre, activa:true,
+          fecha_inicio:eventos[0]?.fecha||null, fecha_fin:eventos[eventos.length-1]?.fecha||null
+        }).select().single();
+        if (et) throw new Error(et.message);
+        tid = nt.id;
+        setImportLog(l=>[...l,'📅 Temporada creada: ' + cfg.nombre]);
+      }
+
+      const { data: exist } = await sb.from('prode_partidos').select('api_id').eq('temporada_id',tid);
+      const yaEx = new Set((exist||[]).map(p=>p.api_id));
+      const nuevos = eventos.filter(e=>e.api_id&&!yaEx.has(e.api_id)).map(e=>({
+        temporada_id:tid, competencia_id:compActiva, api_id:e.api_id,
+        fecha:e.fecha, local:e.local, visitante:e.visitante,
+        logo_local:e.logo_local, logo_visitante:e.logo_visitante,
+        jornada:e.jornada, fase:e.fase,
+        goles_local:e.goles_local, goles_visitante:e.goles_visitante,
+        estado:e.estado, picks_cerrados:e.picks_cerrados,
+      }));
+      let ins=0;
+      for (let i=0;i<nuevos.length;i+=50) {
+        await sb.from('prode_partidos').insert(nuevos.slice(i,i+50));
+        ins+=Math.min(50,nuevos.length-i);
+        setImportLog(l=>[...l,`⚽ ${ins}/${nuevos.length} partidos guardados`]);
+      }
+      setImportLog(l=>[...l,`🏆 Completo: ${nuevos.length} partidos nuevos importados`]);
+      cargarTemporadasYFixture(compActiva);
+      addToast({msg:`✅ ${nuevos.length} partidos de ${cfg.nombre}`,type:'ok'});
+    } catch(e) { setImportLog(l=>[...l,`❌ ${e.message}`]); addToast({msg:'Error: '+e.message,type:'err'}); }
+    setImportando(false);
+  }
+
+  // ── Helpers ──
+  const compObj    = competencias.find(c=>c.id===compActiva);
+  const tempObj    = temporadas.find(t=>t.id===tempActiva);
+  const pts_exacto = parseInt(config.pts_exacto||'3');
+  const fases      = ['grupos','32avos','16avos','8vos','cuartos','semis','final'];
+  const FASE_LABEL = { grupos:'Grupos','32avos':'32avos','16avos':'16avos','8vos':'8vos de final',cuartos:'Cuartos',semis:'Semis',final:'FINAL' };
+  const FASE_BONUS = { grupos:1,'32avos':1,'16avos':1,'8vos':1,cuartos:parseInt(config.bonus_cuartos||2),semis:parseInt(config.bonus_semis||3),final:parseInt(config.bonus_final||4) };
+  const porFase = {};
+  partidos.forEach(p=>{ const f=p.fase||'grupos'; if(!porFase[f])porFase[f]=[]; porFase[f].push(p); });
+  const equiposComp = compObj ? (EQUIPOS_CONOCIDOS[compObj.slug] || []) : [];
+  const esFav = (eq) => favEquipos.some(f => f.toLowerCase() === eq.toLowerCase());
+  const equiposFiltrados = equiposComp.filter(eq => eq.toLowerCase().includes(buscandoEq.toLowerCase()));
+
+  if (cargando) return (
+    <div style={{textAlign:'center',padding:40,color:'var(--tx2)'}}>
+      <div style={{fontSize:32,marginBottom:8}}>🏆</div>
+      <div style={{fontSize:13}}>Cargando el Prode...</div>
+    </div>
+  );
+
+  const accentColor = compObj?.color || '#B7770D';
+
+  // Tabs del menú horizontal principal
+  const MENU_TABS = [
+    { id:'pronosticos', l:'🔮 Pronósticos',   sub:'Analizá los partidos y elegí el resultado más probable.' },
+    { id:'predicciones',l:'🎯 Predicciones',  sub:'Predecí el marcador exacto y sumá puntos.' },
+    { id:'jugagana',    l:'🎮 Jugá y Ganá',   sub:'Desafíos especiales con premios para la comunidad.' },
+    { id:'aciertos',    l:'✅ Aciertos',       sub:'Tu historial de predicciones y estadísticas.' },
+    { id:'quiniela',    l:'📋 Quiniela Dep.',  sub:'Armá tu quiniela deportiva semanal.' },
+    { id:'desafio',     l:'⚡ Desafío Dep.',   sub:'Desafíos especiales por competencia.' },
+    ...(isAdmin ? [{ id:'admin', l:'⚙️ Admin', sub:'Panel de administración.' }] : [])
   ];
-  const QUINIELA = [
-    {id:'q1',he:'⚽',h:'River',ae:'⚽',a:'Boca',date:'Sab 20:30'},
-    {id:'q2',he:'⚽',h:'Racing',ae:'⚽',a:'Independiente',date:'Dom 18:00'},
-    {id:'q3',he:'🏉',h:'Pumas',ae:'🏉',a:'Wallabies',date:'Sab 16:00'},
-  ];
+  const tabActivo = MENU_TABS.find(t => t.id === tab) || MENU_TABS[0];
 
   return (
     <div>
-      {/* HEADER */}
-      <div style={{background:'linear-gradient(135deg,#B7770D,var(--sun))',borderRadius:'var(--rl)',padding:'16px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12}}>
-        <span style={{fontSize:30}}>🏆</span>
+
+      {/* ── 1. TARJETA CABECERA ── */}
+      <div style={{background:'linear-gradient(135deg,#B7770D,#F59E0B)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:10,color:'white'}}>
+        <span style={{fontSize:24,flexShrink:0}}>🏆</span>
         <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700}}>La Tribu Predice</div>
-          <div style={{fontSize:12,opacity:.8}}>Predicciones, pronósticos y desafíos · 100% gratis</div>
+          <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,lineHeight:1.2}}>La Tribu Predice</div>
+          <div style={{fontSize:11,opacity:.85}}>Predicciones, pronósticos y desafíos · 100% gratis</div>
         </div>
-      </div>
-      <div className="section-banner">
-        <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/latribupredice.JPG"
-          alt="La Tribu Predice" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
+        {favEquipos.length > 0 && (
+          <div onClick={()=>setTab('favs')} style={{marginLeft:'auto',background:'rgba(255,255,255,.2)',borderRadius:8,padding:'3px 9px',fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+            ★ {favEquipos.length} fav
+          </div>
+        )}
       </div>
 
-      {/* TABS */}
-      <div className="tabs" style={{flexWrap:'wrap'}}>
-        {[{id:'pronosticos',l:'📊 Pronósticos'},{id:'predicciones',l:'🔮 Predicciones'},{id:'jugagana',l:'🎮 Jugá y Ganá'},{id:'aciertos',l:'🏅 Aciertos'},{id:'quiniela',l:'🎰 Quiniela Dep.'},{id:'desafio',l:'⚡ Desafío Dep.'}].map(t => (
-          <div key={t.id} className={`tabx${tab===t.id?' on':''}`} onClick={()=>setTab(t.id)}>{t.l}</div>
+      {/* ── 2. BANNER IMAGEN GRANDE ── */}
+      <div style={{borderRadius:'var(--r)',overflow:'hidden',marginBottom:12,position:'relative'}}>
+        <img
+          src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/latribupredice.JPG"
+          alt="La Tribu Predice"
+          style={{width:'100%',display:'block',maxHeight:160,objectFit:'cover',objectPosition:'center top'}}
+          onError={e=>{e.target.style.display='none';}}
+        />
+      </div>
+
+      {/* ── 3. MENÚ HORIZONTAL ── */}
+      <div style={{display:'flex',gap:4,overflowX:'auto',scrollbarWidth:'none',marginBottom:4,paddingBottom:2}}>
+        {MENU_TABS.map(t => (
+          <button key={t.id} onClick={()=>setTab(t.id)}
+            style={{flexShrink:0,padding:'6px 12px',borderRadius:16,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',transition:'all .15s',
+              background: tab===t.id ? accentColor : 'var(--bg2)',
+              color: tab===t.id ? 'white' : 'var(--tx2)'}}>
+            {t.l}
+          </button>
         ))}
       </div>
 
-      {/* PRONÓSTICOS */}
-      {tab==='pronosticos' && (
-        <div>
-          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:12,lineHeight:1.5}}>Analizá los partidos y elegí el resultado más probable. Se actualiza cada jornada.</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,flexWrap:'wrap',gap:8}}>
-            <div style={{fontSize:12,color:'var(--tx2)'}}>Completadas: <b style={{color:'var(--cel-d)'}}>{totalPicked}/{PRODE_MATCHES.length}</b></div>
-            {!submitted ? <button className="btn btn-s btn-sm" onClick={submit}>Enviar pronósticos</button>
-              : <span className="badge bg-b" style={{display:'flex',alignItems:'center',gap:4}}><Ic.Check style={{width:10,height:10}}/>Enviado</span>}
-          </div>
-          {PRODE_MATCHES.map(m => {
-            const p = picks[m.id];
-            return (
-              <div key={m.id} className={`prode-match${submitted?' locked':''}`}>
-                <div className="prode-teams">
-                  <div className="prode-team"><span className="prode-em">{m.he}</span><div className="prode-nm">{m.h}</div></div>
-                  <div className="prode-vs">vs</div>
-                  <div className="prode-team"><span className="prode-em">{m.ae}</span><div className="prode-nm">{m.a}</div></div>
-                </div>
-                <div style={{fontSize:10,color:'var(--tx3)',marginBottom:8,textAlign:'center'}}>📅 {m.date}</div>
-                <div className="prode-pickers">
-                  <div className={`prode-btn${p==='h'?' sel-h':''}`} onClick={()=>pick(m.id,'h')}>{m.h} gana</div>
-                  <div className={`prode-btn${p==='e'?' sel-e':''}`} onClick={()=>pick(m.id,'e')}>Empate</div>
-                  <div className={`prode-btn${p==='a'?' sel-a':''}`} onClick={()=>pick(m.id,'a')}>{m.a} gana</div>
-                </div>
-              </div>
-            );
-          })}
+      {/* Descripción del tab activo */}
+      {tabActivo && tab!=='admin' && (
+        <div style={{fontSize:11,color:'var(--tx3)',marginBottom:12,paddingLeft:2}}>{tabActivo.sub}</div>
+      )}
+
+      {/* ── 4. SELECTOR DE COMPETENCIA (dentro de los tabs que lo necesitan) ── */}
+      {(tab==='pronosticos'||tab==='predicciones'||tab==='quiniela'||tab==='desafio') && (
+        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
+          {competencias.map(c => (
+            <button key={c.id} onClick={()=>setCompActiva(c.id)}
+              style={{padding:'4px 11px',borderRadius:14,border:`1.5px solid ${compActiva===c.id?c.color||accentColor:'var(--bd)'}`,cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',
+                background: compActiva===c.id ? c.color||accentColor : 'var(--card)',
+                color: compActiva===c.id ? 'white' : 'var(--tx2)', transition:'all .15s'}}>
+              {COMP_EMOJI[c.slug]||'🏆'} {c.nombre}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* PREDICCIONES */}
+      {/* Selector temporada */}
+      {(tab==='pronosticos'||tab==='predicciones'||tab==='quiniela'||tab==='desafio') && temporadas.length > 0 && (
+        <div style={{display:'flex',gap:5,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
+          <span style={{fontSize:10,color:'var(--tx3)'}}>📅</span>
+          {temporadas.map(t => (
+            <button key={t.id} onClick={()=>setTempActiva(t.id)}
+              style={{padding:'3px 9px',borderRadius:12,border:'1px solid var(--bd)',cursor:'pointer',fontSize:10,fontWeight:600,
+                background: tempActiva===t.id ? accentColor : 'var(--card)',
+                color: tempActiva===t.id ? 'white' : 'var(--tx2)'}}>
+              {t.nombre}{t.cerrada?' 🔒':''}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Cargando fixture */}
+      {cargandoFix && (
+        <div style={{textAlign:'center',padding:16,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)',marginBottom:10,fontSize:12}}>
+          ⏳ Cargando fixture...
+        </div>
+      )}
+
+      {/* Sin temporada */}
+      {(tab==='pronosticos'||tab==='predicciones') && !tempActiva && !cargandoFix && (
+        <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)',marginBottom:10}}>
+          <div style={{fontSize:26,marginBottom:6}}>📅</div>
+          <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Sin fixture disponible</div>
+          <div style={{fontSize:12}}>{isAdmin ? 'Importá desde ⚙️ Admin.' : 'Proximamente se carga el fixture.'}</div>
+        </div>
+      )}
+
+      {/* ═══════════════════════════════════
+          TAB: PRONÓSTICOS — fixture completo
+      ═══════════════════════════════════ */}
+      {tab==='pronosticos' && tempActiva && (
+        <div>
+          {partidos.length === 0 ? (
+            <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}>
+              <div style={{fontSize:26,marginBottom:6}}>⚽</div>
+              <div style={{fontSize:13}}>No hay partidos en esta temporada.</div>
+            </div>
+          ) : fases.filter(f=>porFase[f]).map(fase => (
+            <div key={fase}>
+              <div style={{display:'flex',alignItems:'center',gap:7,margin:'12px 0 7px',padding:'5px 10px',
+                background: fase==='final' ? 'linear-gradient(135deg,#B7770D,#F59E0B)' : 'var(--bg2)',
+                borderRadius:'var(--r)', color: fase==='final' ? 'white' : 'var(--tx)'}}>
+                <span style={{fontSize:12}}>{fase==='final'?'🏆':fase==='semis'?'⚡':fase==='cuartos'?'🎯':'📋'}</span>
+                <span style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{FASE_LABEL[fase]||fase}</span>
+                {FASE_BONUS[fase]>1 && <span style={{marginLeft:'auto',background:'rgba(255,255,255,.25)',borderRadius:7,padding:'1px 6px',fontSize:9,fontWeight:700}}>x{FASE_BONUS[fase]} pts</span>}
+              </div>
+              {porFase[fase].map(partido => {
+                const pick      = picks[partido.id];
+                const yaPick    = enviado[partido.id] || (pick && pick.gl !== undefined);
+                const cerrado   = partido.picks_cerrados || partido.estado !== 'programado';
+                const finalizado= partido.estado === 'finalizado';
+                const esFavL    = esFav(partido.local);
+                const esFavV    = esFav(partido.visitante);
+                return (
+                  <div key={partido.id} className="card" style={{marginBottom:7,
+                    border:(esFavL||esFavV)?`1.5px solid ${accentColor}55`:yaPick&&!finalizado?'1.5px solid rgba(34,197,94,.4)':'1px solid var(--bd)'}}>
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
+                      <span style={{fontSize:10,color:'var(--tx3)'}}>
+                        📅 {new Date(partido.fecha).toLocaleString('es-AR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
+                        {partido.jornada?` · Fecha ${partido.jornada}`:''}
+                        {partido.zona?` · ${partido.zona}`:''}
+                      </span>
+                      <div style={{display:'flex',gap:4,alignItems:'center'}}>
+                        {(esFavL||esFavV) && <span style={{fontSize:10,color:accentColor,fontWeight:700}}>★</span>}
+                        <span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:7,
+                          background:finalizado?'rgba(34,197,94,.1)':cerrado?'rgba(239,68,68,.08)':'rgba(245,158,11,.1)',
+                          color:finalizado?'var(--green)':cerrado?'var(--red)':'#B7770D'}}>
+                          {finalizado?'✅ Final':cerrado?'🔒 Cerrado':'🟢 Abierto'}
+                        </span>
+                      </div>
+                    </div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:6,alignItems:'center',marginBottom:7}}>
+                      <div style={{textAlign:'right'}}>
+                        {partido.logo_local && <img src={partido.logo_local} alt="" style={{width:20,height:20,objectFit:'contain',marginBottom:2,display:'block',marginLeft:'auto'}} onError={e=>e.target.style.display='none'}/>}
+                        <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:esFavL?accentColor:'var(--tx)'}}>{partido.local}{esFavL?' ★':''}</div>
+                      </div>
+                      <div style={{textAlign:'center',fontSize:11,color:'var(--tx3)',fontWeight:600}}>
+                        {finalizado
+                          ? <span style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:800,color:'var(--tx)'}}>{partido.goles_local} - {partido.goles_visitante}</span>
+                          : 'vs'}
+                      </div>
+                      <div style={{textAlign:'left'}}>
+                        {partido.logo_visitante && <img src={partido.logo_visitante} alt="" style={{width:20,height:20,objectFit:'contain',marginBottom:2,display:'block'}} onError={e=>e.target.style.display='none'}/>}
+                        <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:esFavV?accentColor:'var(--tx)'}}>{esFavV?'★ ':''}{partido.visitante}</div>
+                      </div>
+                    </div>
+                    {finalizado && pick && (
+                      <div style={{textAlign:'center',marginBottom:5,padding:'4px 8px',borderRadius:'var(--r)',background:pick.puntos>0?'rgba(34,197,94,.08)':'rgba(239,68,68,.05)'}}>
+                        <span style={{fontSize:11,color:'var(--tx2)'}}>Tu pick: <b>{pick.gl}-{pick.gv}</b> · </span>
+                        <span style={{fontSize:11,fontWeight:700,color:pick.puntos>=pts_exacto?'var(--green)':pick.puntos>0?'#F59E0B':'var(--red)'}}>
+                          {pick.puntos>=pts_exacto?`🎯 +${pick.puntos} pts (exacto!)`:pick.puntos>0?`✅ +${pick.puntos} pts`:'❌ 0 pts'}
+                        </span>
+                      </div>
+                    )}
+                    {!cerrado && !finalizado && (
+                      <div style={{display:'flex',alignItems:'center',gap:7,justifyContent:'center'}}>
+                        <input type="number" min="0" max="20" placeholder="0" value={pick?.gl??''} onChange={ev=>setPick(partido.id,'gl',ev.target.value)}
+                          style={{width:48,textAlign:'center',padding:'5px 3px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:16,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
+                        <span style={{fontWeight:700,color:'var(--tx2)'}}>-</span>
+                        <input type="number" min="0" max="20" placeholder="0" value={pick?.gv??''} onChange={ev=>setPick(partido.id,'gv',ev.target.value)}
+                          style={{width:48,textAlign:'center',padding:'5px 3px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:16,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
+                        <button onClick={()=>enviarPick(partido)} disabled={enviando||yaPick}
+                          style={{padding:'6px 13px',borderRadius:'var(--r)',border:'none',cursor:yaPick?'default':'pointer',fontSize:12,fontWeight:600,
+                            background:yaPick?'var(--bg2)':'var(--cel)',color:yaPick?'var(--tx3)':'white'}}>
+                          {yaPick?'✅ Guardado':'Guardar'}
+                        </button>
+                      </div>
+                    )}
+                    {cerrado && !finalizado && pick && <div style={{textAlign:'center',fontSize:11,color:'var(--tx2)',padding:'3px 0'}}>Tu pick: <b>{pick.gl}-{pick.gv}</b> · esperando resultado</div>}
+                    {cerrado && !finalizado && !pick && <div style={{textAlign:'center',fontSize:10,color:'var(--tx3)',padding:'3px 0'}}>🔒 Cerrado · no participaste</div>}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ═══ TAB: PREDICCIONES ═══ */}
       {tab==='predicciones' && (
         <div>
-          <div style={{background:'rgba(245,158,11,.08)',border:'1px solid rgba(245,158,11,.3)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:14,fontSize:12,color:'var(--tx2)',lineHeight:1.55}}>
-            🔮 <b>Predicciones a largo plazo:</b> ¿Quién ganará la Liga? ¿Los Pumas llegan al podio? Apostá tu reputación.
-          </div>
-          {[
-            {q:'¿Quién gana la Liga Profesional 2025?',opts:['River Plate 🔴','Boca Juniors 🔵','Racing Club ⚡','Otro equipo']},
-            {q:'¿Argentina llega a la Final del Mundial 2026?',opts:['Sí, campeones 🏆','Llega a final pero pierde','Semifinales','Cuartos o antes']},
-            {q:'¿Los Pumas terminan entre los 3 del año?',opts:['Sí, podio 🏉','Top 5','Top 10','No llegan']},
-          ].map((pred,i) => (
-            <div key={i} className="card cp" style={{marginBottom:12}}>
-              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,marginBottom:10,color:'var(--tx)'}}>{pred.q}</div>
-              {pred.opts.map((o,j) => (
-                <div key={j} className="po" onClick={()=>addToast({msg:`Predicción registrada: ${o}`,type:'ok'})} style={{cursor:'pointer'}}>
-                  <div className="po-row"><span>{o}</span></div>
-                </div>
-              ))}
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>🎯 Tus predicciones</div>
+          {Object.keys(picks).length === 0 ? (
+            <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}>
+              <div style={{fontSize:26,marginBottom:6}}>🎯</div>
+              <div style={{fontSize:13}}>No tenés predicciones guardadas aún.</div>
+              <div style={{fontSize:12,marginTop:4}}>Andá a <b>Pronósticos</b> y elegí tus resultados.</div>
             </div>
-          ))}
-        </div>
-      )}
-
-      {/* JUGÁ Y GANÁ */}
-      {tab==='jugagana' && (
-        <div>
-          <div style={{background:'linear-gradient(135deg,rgba(183,119,13,.1),rgba(245,158,11,.08))',border:'1.5px solid rgba(183,119,13,.3)',borderRadius:'var(--rl)',padding:16,marginBottom:14}}>
-            <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,color:'#B7770D',marginBottom:6}}>🎮 ¿Cómo funciona?</div>
-            <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.65}}>
-              Completá el prode de cada fecha → acumulá puntos → subí en el ranking → ganás premios digitales exclusivos de Tribuna Libre.
-            </div>
-          </div>
-          {[
-            {em:'🥇',t:'Premio Semanal',d:'El mejor puntaje de la semana gana una membresía premium por 30 días',pts:'100+ pts'},
-            {em:'🏆',t:'Premio Mensual',d:'El top 3 del mes recibe badge exclusivo "Leyenda de la Tribu" en su perfil',pts:'Top 3'},
-            {em:'⭐',t:'Premio Especial',d:'Quien acierte todos los resultados de una jornada gana mención en el portal',pts:'Pleno'},
-          ].map((p,i) => (
-            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',gap:12,alignItems:'flex-start'}}>
-              <span style={{fontSize:28,flexShrink:0}}>{p.em}</span>
-              <div>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:3}}>{p.t}</div>
-                <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.5,marginBottom:5}}>{p.d}</div>
-                <span className="badge" style={{background:'rgba(183,119,13,.12)',color:'#B7770D',padding:'2px 8px',borderRadius:8,fontSize:10}}>{p.pts}</span>
-              </div>
-            </div>
-          ))}
-          <button className="btn btn-s" style={{width:'100%',justifyContent:'center',marginTop:4}} onClick={()=>addToast({msg:'¡Inscripto en Jugá y Ganá! 🎉',type:'ok'})}>
-            Participar ahora
-          </button>
-        </div>
-      )}
-
-      {/* ACIERTOS */}
-      {tab==='aciertos' && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,marginBottom:12,color:'var(--tx)'}}>🏅 Ranking de Aciertos — Jornada actual</div>
-          {ACIERTOS.map((a,i) => (
-            <div key={i} className="card cp" style={{marginBottom:8,display:'flex',alignItems:'center',gap:12}}>
-              <span style={{fontSize:22,flexShrink:0}}>{a.em}</span>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:a.color}}>{a.u}</div>
-                <div style={{fontSize:11,color:'var(--tx3)'}}>Puesto #{i+1} en el ranking</div>
-              </div>
-              <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,color:a.color}}>{a.pts} pts</div>
-            </div>
-          ))}
-          <div style={{textAlign:'center',marginTop:10,fontSize:12,color:'var(--tx3)'}}>Ranking actualizado al cierre de cada jornada</div>
-        </div>
-      )}
-
-      {/* QUINIELA DEPORTIVA */}
-      {tab==='quiniela' && (
-        <div>
-          <div style={{background:'rgba(139,92,246,.08)',border:'1px solid rgba(139,92,246,.25)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:14,fontSize:12,color:'var(--tx2)',lineHeight:1.55}}>
-            🎰 <b>Quiniela Deportiva:</b> Elegí ganador, empate o perdedor en cada partido. Se cierra 1h antes del inicio.
-          </div>
-          {QUINIELA.map(m => {
-            const q = quinPick[m.id];
+          ) : partidos.filter(p=>picks[p.id]).map(partido => {
+            const pick = picks[partido.id];
+            const finalizado = partido.estado === 'finalizado';
             return (
-              <div key={m.id} className="prode-match">
-                <div className="prode-teams">
-                  <div className="prode-team"><span className="prode-em">{m.he}</span><div className="prode-nm">{m.h}</div></div>
-                  <div className="prode-vs">vs</div>
-                  <div className="prode-team"><span className="prode-em">{m.ae}</span><div className="prode-nm">{m.a}</div></div>
+              <div key={partido.id} className="card" style={{marginBottom:7,display:'flex',alignItems:'center',gap:10}}>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{partido.local} vs {partido.visitante}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{new Date(partido.fecha).toLocaleDateString('es-AR')}</div>
                 </div>
-                <div style={{fontSize:10,color:'var(--tx3)',marginBottom:8,textAlign:'center'}}>🕐 {m.date}</div>
-                <div className="prode-pickers">
-                  <div className={`prode-btn${q==='h'?' sel-h':''}`} onClick={()=>setQuinPick(p=>({...p,[m.id]:'h'}))}>{m.h}</div>
-                  <div className={`prode-btn${q==='e'?' sel-e':''}`} onClick={()=>setQuinPick(p=>({...p,[m.id]:'e'}))}>X</div>
-                  <div className={`prode-btn${q==='a'?' sel-a':''}`} onClick={()=>setQuinPick(p=>({...p,[m.id]:'a'}))}>{m.a}</div>
+                <div style={{textAlign:'center'}}>
+                  <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:800}}>{pick.gl} - {pick.gv}</div>
+                  {finalizado && <div style={{fontSize:10,fontWeight:700,color:pick.puntos>0?'var(--green)':'var(--red)'}}>{pick.puntos>0?`+${pick.puntos} pts`:'0 pts'}</div>}
                 </div>
               </div>
             );
           })}
-          <button className="btn btn-s btn-sm" style={{marginTop:6}} onClick={()=>addToast({msg:'¡Quiniela enviada! 🎰',type:'ok'})}>
-            Confirmar quiniela
-          </button>
         </div>
       )}
 
-      {/* DESAFÍO DEPORTIVO */}
-      {tab==='desafio' && (
+      {/* ═══ TAB: JUGÁ Y GANÁ ═══ */}
+      {tab==='jugagana' && (
         <div>
-          <div style={{background:'linear-gradient(135deg,rgba(192,57,43,.08),rgba(183,119,13,.06))',border:'1.5px solid rgba(192,57,43,.25)',borderRadius:'var(--rl)',padding:16,marginBottom:14}}>
-            <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,color:'var(--red)',marginBottom:6}}>⚡ Desafío de la Semana</div>
-            <div style={{fontSize:13,color:'var(--tx)',fontWeight:600,marginBottom:5}}>¿Cuántos goles marca River esta jornada?</div>
-            <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.6,marginBottom:12}}>Elegí un número del 0 al 5+. Quien más cerca esté suma puntos extra.</div>
-            <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
-              {['0','1','2','3','4','5+'].map(n => (
-                <div key={n} className={`prode-btn${desafio===n?' sel-h':''}`} style={{flex:'1 1 auto',textAlign:'center',minWidth:44}} onClick={()=>{setDesafio(n);addToast({msg:`Desafío registrado: ${n} goles`,type:'ok'});}}>{n}</div>
-              ))}
-            </div>
-          </div>
-          <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,marginBottom:10,color:'var(--tx)'}}>Desafíos anteriores</div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>🎮 Jugá y Ganá</div>
           {[
-            {t:'¿Ganó Argentina el último partido?',res:'Sí ✅',pts:'+15 pts'},
-            {t:'¿Terminó en empate Boca vs Racing?',res:'No ❌',pts:'+0 pts'},
-          ].map((d,i) => (
-            <div key={i} className="card cs" style={{marginBottom:8,display:'flex',alignItems:'center',gap:10}}>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,fontWeight:500,color:'var(--tx)',marginBottom:2}}>{d.t}</div>
-                <div style={{fontSize:11,color:'var(--tx3)'}}>Resultado: {d.res}</div>
+            {em:'🥇',t:'Premio Semanal',d:'El mejor puntaje de la semana gana membresía premium 30 días',pts:'Top 1 semanal'},
+            {em:'🏆',t:'Campeón de Temporada',d:'El #1 al cierre recibe el badge exclusivo "Campeón" en su perfil',pts:'1er lugar'},
+            {em:'🎯',t:'Pleno de jornada',d:'Acertás todos los resultados de una fecha → mención especial en el portal',pts:'Pleno'},
+            {em:'🔥',t:'Racha de fuego',d:'5 aciertos seguidos desbloquea la insignia "Profeta"',pts:'Racha x5'},
+          ].map((p,i) => (
+            <div key={i} className="card" style={{marginBottom:8,display:'flex',gap:10,alignItems:'flex-start'}}>
+              <span style={{fontSize:24,flexShrink:0}}>{p.em}</span>
+              <div>
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:2}}>{p.t}</div>
+                <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.5,marginBottom:4}}>{p.d}</div>
+                <span style={{background:`${accentColor}18`,color:accentColor,padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>{p.pts}</span>
               </div>
-              <span style={{fontSize:11,fontWeight:700,color:'var(--green)'}}>{d.pts}</span>
             </div>
           ))}
+          <div style={{background:`${accentColor}10`,border:`1.5px solid ${accentColor}33`,borderRadius:'var(--r)',padding:12,marginTop:4,fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>
+            <b>¿Cómo ganar puntos?</b> Exacto = {config.pts_exacto||3} pts · Solo ganador = {config.pts_ganador||1} pt · Bonus final x{config.bonus_final||4}
+          </div>
         </div>
       )}
+
+      {/* ═══ TAB: ACIERTOS ═══ */}
+      {tab==='aciertos' && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>🏅 Ranking — {tempObj?.nombre||'Temporada'}</div>
+          {ranking.length === 0
+            ? <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}><div style={{fontSize:26,marginBottom:6}}>📊</div><div>Sin puntos aún en esta temporada.</div></div>
+            : ranking.map((r,i) => (
+              <div key={i} className="card" style={{marginBottom:6,display:'flex',alignItems:'center',gap:10}}>
+                <span style={{fontSize:18,width:24,textAlign:'center',flexShrink:0}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${r.posicion}`}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700}}>{r.username}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{r.aciertos} aciertos · {r.exactos} exactos{r.racha>2?` · 🔥 ${r.racha}`:''}</div>
+                </div>
+                <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:800,color:i===0?'#F59E0B':i===1?'#9CA3AF':i===2?'#B45309':'var(--cel)'}}>{r.puntos} pts</div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* ═══ TAB: QUINIELA ═══ */}
+      {tab==='quiniela' && tempActiva && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>📋 Quiniela Deportiva</div>
+          <div style={{background:'var(--card)',borderRadius:'var(--r)',padding:14,marginBottom:10,fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>
+            Seleccioná el resultado de <b>todos los partidos de la jornada</b> de una sola vez y enviá tu quiniela completa. Quien más acierta gana.
+          </div>
+          {partidos.filter(p=>p.estado==='programado'&&!p.picks_cerrados).length === 0
+            ? <div style={{textAlign:'center',padding:24,color:'var(--tx3)',fontSize:12}}>No hay partidos abiertos para la quiniela en este momento.</div>
+            : partidos.filter(p=>p.estado==='programado'&&!p.picks_cerrados).map(partido => (
+              <div key={partido.id} className="card" style={{marginBottom:7}}>
+                <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto auto',gap:6,alignItems:'center'}}>
+                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,textAlign:'right'}}>{partido.local}</div>
+                  <input type="number" min="0" max="20" placeholder="0" value={picks[partido.id]?.gl??''} onChange={ev=>setPick(partido.id,'gl',ev.target.value)}
+                    style={{width:42,textAlign:'center',padding:'4px 2px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:15,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
+                  <input type="number" min="0" max="20" placeholder="0" value={picks[partido.id]?.gv??''} onChange={ev=>setPick(partido.id,'gv',ev.target.value)}
+                    style={{width:42,textAlign:'center',padding:'4px 2px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:15,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
+                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{partido.visitante}</div>
+                  <button onClick={()=>enviarPick(partido)} disabled={enviando||enviado[partido.id]}
+                    style={{padding:'4px 10px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
+                      background:enviado[partido.id]?'var(--bg2)':'var(--cel)',color:enviado[partido.id]?'var(--tx3)':'white'}}>
+                    {enviado[partido.id]?'✅':'OK'}
+                  </button>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      )}
+
+      {/* ═══ TAB: DESAFÍO ═══ */}
+      {tab==='desafio' && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>⚡ Desafíos Deportivos</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {logros.map(l => {
+              const desbloqueado = misLogros.includes(l.id);
+              return (
+                <div key={l.id} className="card" style={{textAlign:'center',padding:'12px 8px',opacity:desbloqueado?1:.45,
+                  border:desbloqueado?`1.5px solid ${accentColor}55`:'1px solid var(--bd)'}}>
+                  <div style={{fontSize:24,marginBottom:4}}>{l.icono}</div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700,marginBottom:2}}>{l.nombre}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)',lineHeight:1.4}}>{l.descripcion}</div>
+                  {desbloqueado && <div style={{fontSize:9,color:accentColor,fontWeight:700,marginTop:3}}>✅ Desbloqueado</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TAB: MIS EQUIPOS FAVORITOS (acceso rápido desde badge) ═══ */}
+      {tab==='favs' && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:6}}>★ Mis equipos favoritos</div>
+          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:10,lineHeight:1.6}}>
+            Elegí hasta <b>5 equipos</b>. Sus partidos se resaltan con ★ en Pronósticos y Quiniela.
+          </div>
+          {favEquipos.length > 0 && (
+            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
+              {favEquipos.map(eq => (
+                <div key={eq} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:16,
+                  background:`${accentColor}18`,border:`1.5px solid ${accentColor}44`,fontSize:12,fontWeight:600,color:accentColor}}>
+                  ★ {eq}
+                  <button onClick={()=>toggleFavorito(eq)} style={{background:'none',border:'none',cursor:'pointer',color:accentColor,fontSize:14,padding:0,lineHeight:1}}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <input placeholder="Buscar equipo..." value={buscandoEq} onChange={e=>setBuscandoEq(e.target.value)}
+            style={{width:'100%',padding:'8px 12px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:10}}/>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+            {equiposFiltrados.map(eq => {
+              const selec = esFav(eq);
+              const lleno = favEquipos.length >= 5 && !selec;
+              return (
+                <button key={eq} onClick={()=>!lleno&&toggleFavorito(eq)} disabled={lleno}
+                  style={{padding:'8px 12px',borderRadius:'var(--r)',border:`1.5px solid ${selec?accentColor:'var(--bd)'}`,cursor:lleno?'not-allowed':'pointer',fontSize:12,fontWeight:selec?700:400,textAlign:'left',
+                    background:selec?`${accentColor}15`:'var(--card)',color:selec?accentColor:'var(--tx)',opacity:lleno?.5:1,display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:13}}>{selec?'★':'☆'}</span> {eq}
+                </button>
+              );
+            })}
+          </div>
+          {equiposComp.length === 0 && (
+            <div style={{textAlign:'center',padding:16,color:'var(--tx3)',fontSize:12}}>
+              Seleccioná una competencia para ver sus equipos.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ═══ TAB: ADMIN ═══ */}
+      {tab==='admin' && isAdmin && (
+        <div>
+          <div style={{background:'rgba(239,68,68,.07)',border:'1px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--tx2)'}}>
+            ⚙️ <b>Panel Admin</b> — solo vos podés ver esto.
+          </div>
+          <div style={{display:'flex',gap:5,marginBottom:12,flexWrap:'wrap'}}>
+            {[{id:'importar',l:'📥 Importar'},{id:'partidos',l:'➕ Partido'},{id:'resultados',l:'✅ Resultado'},{id:'temporadas',l:'📅 Temporada'},{id:'config',l:'⚙️ Config'}].map(t => (
+              <button key={t.id} onClick={()=>setAdminTab(t.id)}
+                style={{padding:'5px 11px',borderRadius:14,border:'1px solid var(--bd)',cursor:'pointer',fontSize:11,fontWeight:600,
+                  background:adminTab===t.id?'var(--cel)':'var(--card)',color:adminTab===t.id?'white':'var(--tx2)'}}>
+                {t.l}
+              </button>
+            ))}
+          </div>
+
+          {adminTab==='importar' && (
+            <div className="card cp">
+              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:6,color:'var(--green)'}}>📥 Importar fixture</div>
+              {(() => {
+                const cfg = API_COMPS[compObj?.slug];
+                const srcLabel = !cfg ? null : cfg.source === 'fdorg' ? '⚽ football-data.org' : '🇦🇷 RapidAPI (API-Football)';
+                const keyOk = !cfg ? false : cfg.source === 'fdorg'
+                  ? (window.FOOTBALL_DATA_KEY && window.FOOTBALL_DATA_KEY !== 'TU_FOOTBALL_DATA_KEY_AQUI')
+                  : (window.RAPIDAPI_KEY && window.RAPIDAPI_KEY !== 'TU_RAPIDAPI_KEY_AQUI');
+                return (
+                  <>
+                    <div style={{fontSize:12,color:'var(--tx2)',marginBottom:4}}>{compObj?.nombre}</div>
+                    <div style={{fontSize:11,marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
+                      <span style={{color:cfg?'var(--green)':'var(--red)',fontWeight:700}}>{cfg?'✅ Fuente: '+srcLabel:'❌ Sin config'}</span>
+                      {cfg && <span style={{color:keyOk?'var(--green)':'var(--red)',fontWeight:700}}>· API Key: {keyOk?'✅ Configurada':'⚠️ Faltante'}</span>}
+                    </div>
+                    {cfg && !keyOk && (
+                      <div style={{background:'rgba(192,57,43,.08)',border:'1px solid rgba(192,57,43,.2)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:11,color:'#B03020',marginBottom:8}}>
+                        Pegá tu clave de {cfg.source === 'fdorg' ? 'football-data.org en FOOTBALL_DATA_KEY' : 'RapidAPI en RAPIDAPI_KEY'} al inicio del archivo.
+                      </div>
+                    )}
+                    <button onClick={adminImportarFixture} disabled={importando||!cfg||!keyOk}
+                      style={{width:'100%',padding:'10px',borderRadius:'var(--r)',border:'none',fontWeight:700,fontSize:13,cursor:'pointer',background:'var(--green)',color:'white',opacity:importando||!cfg||!keyOk?.5:1,transition:'.15s'}}>
+                      {importando?'⏳ Importando...':cfg?`📥 Importar fixture · ${compObj?.nombre||'competencia'}` : '❌ Sin config de API'}
+                    </button>
+                  </>
+                );
+              })()}
+              {importLog.length > 0 && (
+                <div style={{marginTop:8,background:'var(--bg2)',borderRadius:'var(--r)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
+                  {importLog.map((l,i)=><div key={i} style={{fontSize:11,color:'var(--tx2)',marginBottom:2,fontFamily:'monospace'}}>{l}</div>)}
+                </div>
+              )}
+            </div>
+          )}
+          {adminTab==='partidos' && (
+            <div className="card">
+              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>➕ Nuevo partido</div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
+                <input placeholder="Local" value={formPartido.local} onChange={e=>setFormP(p=>({...p,local:e.target.value}))} style={{padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13}}/>
+                <input placeholder="Visitante" value={formPartido.visitante} onChange={e=>setFormP(p=>({...p,visitante:e.target.value}))} style={{padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13}}/>
+              </div>
+              <input type="datetime-local" value={formPartido.fecha} onChange={e=>setFormP(p=>({...p,fecha:e.target.value}))} style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:8}}/>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
+                <select value={formPartido.fase} onChange={e=>setFormP(p=>({...p,fase:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}>
+                  {fases.map(f=><option key={f} value={f}>{FASE_LABEL[f]||f}</option>)}
+                </select>
+                <input placeholder="Nº Fecha" type="number" value={formPartido.jornada} onChange={e=>setFormP(p=>({...p,jornada:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
+                <input placeholder="Zona" value={formPartido.zona} onChange={e=>setFormP(p=>({...p,zona:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
+              </div>
+              <button onClick={adminCrearPartido} style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'var(--cel)',color:'white',fontWeight:700,fontSize:13}}>➕ Agregar</button>
+              {partidos.length > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{fontSize:11,color:'var(--tx3)',marginBottom:5}}>{partidos.length} partidos cargados</div>
+                  {partidos.slice(0,6).map(p=>(
+                    <div key={p.id} style={{fontSize:11,padding:'3px 7px',borderRadius:5,background:'var(--bg2)',marginBottom:3,display:'flex',justifyContent:'space-between'}}>
+                      <span>{p.local} vs {p.visitante}</span>
+                      <span style={{color:p.estado==='finalizado'?'var(--green)':'var(--tx3)'}}>{p.estado}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {adminTab==='resultados' && (
+            <div className="card">
+              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>✅ Cargar resultado</div>
+              <select value={formResultado.partido_id} onChange={e=>setFormR(r=>({...r,partido_id:e.target.value}))}
+                style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12,marginBottom:8}}>
+                <option value="">— Elegí el partido —</option>
+                {partidos.filter(p=>p.estado!=='finalizado').map(p=>(
+                  <option key={p.id} value={p.id}>{p.local} vs {p.visitante} · {new Date(p.fecha).toLocaleDateString('es-AR')}</option>
+                ))}
+              </select>
+              <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:8,alignItems:'center',marginBottom:10}}>
+                <input type="number" min="0" max="20" placeholder="Local" value={formResultado.gl} onChange={e=>setFormR(r=>({...r,gl:e.target.value}))} style={{padding:'8px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:18,fontWeight:700,textAlign:'center'}}/>
+                <span style={{textAlign:'center',fontWeight:700,color:'var(--tx2)'}}>-</span>
+                <input type="number" min="0" max="20" placeholder="Visit." value={formResultado.gv} onChange={e=>setFormR(r=>({...r,gv:e.target.value}))} style={{padding:'8px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:18,fontWeight:700,textAlign:'center'}}/>
+              </div>
+              <button onClick={adminCargarResultado} style={{width:'100%',padding:'10px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'#22C55E',color:'white',fontWeight:700,fontSize:13}}>✅ Guardar y calcular puntos</button>
+            </div>
+          )}
+          {adminTab==='temporadas' && (
+            <div>
+              <div className="card" style={{marginBottom:8,border:'1.5px solid rgba(34,197,94,.3)'}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:5,color:'var(--green)'}}>📥 Auto-importar</div>
+                <button onClick={adminImportarFixture} disabled={importando||!API_COMPS[compObj?.slug]}
+                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,background:'var(--green)',color:'white'}}>
+                  {importando?'⏳ Importando...':'📥 Importar fixture · '+( compObj?.nombre||'competencia')}
+                </button>
+              </div>
+              <div className="card">
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>📅 Crear temporada manual</div>
+                <input placeholder="Nombre (ej: Apertura 2026)" value={formTemp.nombre} onChange={e=>setFormT(t=>({...t,nombre:e.target.value}))}
+                  style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:8}}/>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
+                  <input type="date" value={formTemp.fecha_inicio} onChange={e=>setFormT(t=>({...t,fecha_inicio:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
+                  <input type="date" value={formTemp.fecha_fin} onChange={e=>setFormT(t=>({...t,fecha_fin:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
+                </div>
+                <button onClick={adminCrearTemp} style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'var(--cel)',color:'white',fontWeight:700,fontSize:13}}>📅 Crear vacía</button>
+              </div>
+              {temporadas.length > 0 && (
+                <div className="card" style={{marginTop:8}}>
+                  {temporadas.map(t=>(
+                    <div key={t.id} style={{padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+                      <span style={{fontSize:12,fontWeight:600}}>{t.nombre}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:t.activa?'var(--green)':t.cerrada?'var(--red)':'var(--tx3)'}}>{t.activa?'✅':t.cerrada?'🔒':'⏸'}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {adminTab==='config' && (
+            <div className="card">
+              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>⚙️ Config del Prode</div>
+              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8}}>Editá en Supabase → Table Editor → prode_config → campo "valor".</div>
+              {Object.entries(config).map(([k,v])=>(
+                <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3}}>
+                  <span style={{fontSize:11,color:'var(--tx2)'}}>{k}</span>
+                  <span style={{fontSize:12,fontWeight:700,color:'var(--cel)'}}>{v}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
     </div>
   );
 }
+
 
 /* ══════ COPA PAGE ══════ */
 function CopaPage() {
