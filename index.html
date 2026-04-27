@@ -94,7 +94,7 @@ window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá 
 // ── GNews API — imágenes reales garantizadas ─────────────────────────────
 // Registrate GRATIS en https://gnews.io → Plan Free = 100 req/día
 // Devuelve el campo "image" directamente en cada artículo, sin proxies.
-window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // ← pegá tu API key de gnews.io acá
+window.GNEWS_KEY = '';  // GNews bloqueado por CORS desde github.io — usar NewsData en su lugar
 
 // ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
 // Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
@@ -3089,8 +3089,7 @@ function ProdePage({ user, addToast }) {
   }
 
   // ── Fetch desde RapidAPI / API-Football (Argentina + Mundial) ────────
-  // Estrategia: 1) Supabase Edge Function proxy (evita CORS/403 del browser)
-  //             2) llamada directa como fallback (por si el proxy no está desplegado)
+  // Llama a la Supabase Edge Function "rapidapi-proxy" (JWT desactivado en el dashboard)
   async function fetchDesdeRapidApi(leagueId, season) {
     const key = window.RAPIDAPI_KEY;
     if (!key || key === 'TU_RAPIDAPI_KEY_AQUI')
@@ -3098,7 +3097,6 @@ function ProdePage({ user, addToast }) {
 
     const apiUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?league=${leagueId}&season=${season}`;
 
-    // ── Helper para parsear la respuesta JSON de API-Football ──────────
     function parseRapidResp(json) {
       if (json.errors && Object.keys(json.errors).length)
         throw new Error('RapidAPI error: ' + Object.values(json.errors)[0]);
@@ -3126,60 +3124,37 @@ function ProdePage({ user, addToast }) {
       });
     }
 
-    // ── 1) Intentar vía Supabase Edge Function (rapidapi-proxy) ────────
-    const proxyUrl = window.RAPIDAPI_PROXY;
-    const anonKey  = window.SUPABASE_ANON;
-    if (proxyUrl && anonKey) {
-      try {
-        const resp = await fetch(proxyUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + anonKey,
-            'apikey': anonKey,
-          },
-          body: JSON.stringify({ url: apiUrl, rapidapi_key: key }),
-        });
-        if (resp.ok) {
-          const json = await resp.json();
-          const result = parseRapidResp(json);
-          console.log(`RapidAPI (proxy) ✓ league=${leagueId}: ${result.length} partidos`);
-          return result;
-        }
-        const errText = await resp.text().catch(() => '');
-        console.warn(`RapidAPI proxy HTTP ${resp.status}:`, errText.slice(0, 120));
-        // Si el proxy devuelve 404 (no desplegado) caemos al directo
-        if (resp.status !== 404 && resp.status !== 502 && resp.status !== 503)
-          throw new Error(`Proxy RapidAPI ${resp.status} — ${errText.slice(0, 80)}`);
-      } catch(e) {
-        if (!e.message.startsWith('Proxy RapidAPI'))
-          console.warn('RapidAPI proxy no disponible, intentando directo:', e.message);
-        else throw e;
-      }
-    }
-
-    // ── 2) Fallback: llamada directa al browser (puede fallar en algunos planes) ──
-    let resp2;
+    // ── Llamar al proxy de Supabase (sin JWT — desactivado en el dashboard) ──
+    const proxyUrl = window.RAPIDAPI_PROXY || (window.SUPABASE_URL + '/functions/v1/rapidapi-proxy');
     try {
-      resp2 = await fetch(apiUrl, {
-        headers: {
-          'x-rapidapi-host': 'api-football-v1.p.rapidapi.com',
-          'x-rapidapi-key': key,
-        }
+      const resp = await fetch(proxyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: apiUrl, rapidapi_key: key }),
       });
+      if (!resp.ok) {
+        const err = await resp.text().catch(() => '');
+        throw new Error(`Proxy ${resp.status}: ${err.slice(0, 120)}`);
+      }
+      const json = await resp.json();
+      const result = parseRapidResp(json);
+      console.log(`RapidAPI (proxy) ✓ league=${leagueId}: ${result.length} partidos`);
+      return result;
     } catch(e) {
-      throw new Error('RapidAPI: error de red — desplegá la Edge Function "rapidapi-proxy" en Supabase para evitar bloqueos CORS. Detalle: ' + e.message);
+      // Fallback directo (puede fallar por CORS en algunos planes, pero lo intentamos)
+      console.warn('Proxy falló, intentando directo:', e.message);
+      let resp2;
+      try {
+        resp2 = await fetch(apiUrl, {
+          headers: { 'x-rapidapi-host': 'api-football-v1.p.rapidapi.com', 'x-rapidapi-key': key }
+        });
+      } catch(e2) {
+        throw new Error('RapidAPI no disponible. Verificá que el proxy "rapidapi-proxy" en Supabase tiene JWT desactivado. Error: ' + e.message);
+      }
+      if (resp2.status === 403) throw new Error('RapidAPI 403 — Desactivá "Enforce JWT Verification" en la Edge Function del dashboard de Supabase.');
+      if (!resp2.ok) throw new Error(`RapidAPI HTTP ${resp2.status}`);
+      return parseRapidResp(await resp2.json());
     }
-    if (resp2.status === 403)
-      throw new Error('RapidAPI 403 — El plan Free bloquea llamadas desde el browser. Desplegá la Edge Function "rapidapi-proxy" en Supabase (ver instrucciones en el código).');
-    if (resp2.status === 429)
-      throw new Error('RapidAPI: límite diario alcanzado (100 req/día en free tier)');
-    if (!resp2.ok)
-      throw new Error(`RapidAPI HTTP ${resp2.status}`);
-    const json2 = await resp2.json();
-    const result2 = parseRapidResp(json2);
-    console.log(`RapidAPI (directo) ✓ league=${leagueId}: ${result2.length} partidos`);
-    return result2;
   }
 
   function _faseRapi(round) {
