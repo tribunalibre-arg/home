@@ -93,7 +93,7 @@ window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá 
 // ── GNews API — imágenes reales garantizadas ─────────────────────────────
 // Registrate GRATIS en https://gnews.io → Plan Free = 100 req/día
 // Devuelve el campo "image" directamente en cada artículo, sin proxies.
-window.GNEWS_KEY = '';  // GNews bloqueado por CORS desde github.io  // ← pegá tu API key de gnews.io acá
+window.GNEWS_KEY = 'b68e1a8444e06c1c7400be3935b8dce4';  // GNews bloqueado por CORS desde github.io  // ← pegá tu API key de gnews.io acá
 
 // ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
 // Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
@@ -113,11 +113,11 @@ window.FOOTBALL_DATA_KEY = 'e610b34868b64523af8034caf0ad7b90';  // ← pegá tu 
 // Suscribite en https://rapidapi.com/api-sports/api/api-football
 // Plan Free: 100 req/día. Cubre Liga Profesional, Libertadores, Primera Nacional.
 window.RAPIDAPI_KEY  = '';             // ya no se usa
-window.APISPORTS_KEY = 'TU_KEY_AQUI';  // ← pegá acá tu key de dashboard.api-football.com (gratis, sin tarjeta)
+window.APISPORTS_KEY = '848bc1a907e1b48d68cd41db502c9ff5';  // ← pegá acá tu key de dashboard.api-football.com (gratis, sin tarjeta)
 
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
-  if (!key || key === 'TU_NEWSDATA_KEY_AQUI') return [];
+  if (!key || key === 'pub_b6a0630b0e984891bb8836a1605fc699') return [];
   const CACHE_KEY = 'tl_newsdata';
   const CACHE_TTL = 15 * 60 * 1000;
   try {
@@ -153,7 +153,7 @@ window.fetchNewsData = async function() {
 
 window.fetchGNews = async function() {
   const key = window.GNEWS_KEY;
-  if (!key || key === 'TU_GNEWS_KEY_AQUI') return [];  // sin key, saltar silenciosamente
+  if (!key || key === 'b68e1a8444e06c1c7400be3935b8dce4') return [];  // sin key, saltar silenciosamente
 
   const CACHE_KEY = 'tl_gnews';
   const CACHE_TTL = 15 * 60 * 1000;
