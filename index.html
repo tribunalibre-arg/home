@@ -79,7 +79,7 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 // ═══════════════════════════════════════════════════════════
 // ── Cache version — cambiá el número si querés forzar re-fetch de noticias ──
 (function bustCache() {
-  var CACHE_VERSION = 'v4';
+  var CACHE_VERSION = 'v5';  // incrementado para limpiar caché de noticias
   var stored = localStorage.getItem('tl_cache_version');
   if (stored !== CACHE_VERSION) {
     ['tl_gnews','tl_newsdata','tl_rss_cache'].forEach(function(k){ try{localStorage.removeItem(k);}catch(e){} });
@@ -2933,12 +2933,12 @@ function ProdePage({ user, addToast }) {
     'primera-nacional':  { source:'rapidapi', id:131,  season:2025, nombre:'Primera Nacional 2025' },
     'copa-argentina':    { source:'rapidapi', id:130,  season:2025, nombre:'Copa Argentina 2025' },
     // ── EUROPA ───────────────────────────────────────────────────────────
-    'champions-league':  { source:'fdorg',   id:'CL',  season:2024, nombre:'Champions League 2024-25' },
-    'europa-league':     { source:'fdorg',   id:'EL',  season:2024, nombre:'Europa League 2024-25' },
-    'la-liga':           { source:'fdorg',   id:'PD',  season:2024, nombre:'La Liga 2024-25' },
-    'premier-league':    { source:'fdorg',   id:'PL',  season:2024, nombre:'Premier League 2024-25' },
-    'serie-a':           { source:'fdorg',   id:'SA',  season:2024, nombre:'Serie A 2024-25' },
-    'bundesliga':        { source:'fdorg',   id:'BL1', season:2024, nombre:'Bundesliga 2024-25' },
+    'champions-league':  { source:'rapidapi', id:2,   season:2024, nombre:'Champions League 2024-25' },
+    'europa-league':     { source:'rapidapi', id:3,   season:2024, nombre:'Europa League 2024-25' },
+    'la-liga':           { source:'rapidapi', id:140, season:2024, nombre:'La Liga 2024-25' },
+    'premier-league':    { source:'rapidapi', id:39,  season:2024, nombre:'Premier League 2024-25' },
+    'serie-a':           { source:'rapidapi', id:135, season:2024, nombre:'Serie A 2024-25' },
+    'bundesliga':        { source:'rapidapi', id:78,  season:2024, nombre:'Bundesliga 2024-25' },
     // ── MUNDIAL ──────────────────────────────────────────────────────────
     'mundial-2026':      { source:'rapidapi', id:1,    season:2026, nombre:'Copa del Mundo 2026' },
   };
@@ -3088,13 +3088,14 @@ function ProdePage({ user, addToast }) {
     return 'grupos';
   }
 
-  // ── Fetch desde api-sports.io (API-Football directo, CORS libre, sin proxy) ──
-  // Registrate gratis en: https://dashboard.api-football.com/register
+  // ── Fetch desde api-sports.io (directo desde el browser, sin proxy ni CORS) ──
+  // Una única key para Argentina + Europa + Mundial.
+  // Registrate gratis (sin tarjeta) en: https://dashboard.api-football.com/register
   // Pegá tu key en window.APISPORTS_KEY al inicio del archivo.
   async function fetchDesdeRapidApi(leagueId, season) {
     const key = window.APISPORTS_KEY;
     if (!key || key === 'TU_KEY_AQUI')
-      throw new Error('Falta APISPORTS_KEY — registrate gratis en dashboard.api-football.com y pegá tu key en window.APISPORTS_KEY');
+      throw new Error('Falta APISPORTS_KEY — registrate gratis en dashboard.api-football.com y pegá tu key');
     const url = `https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}`;
     let resp;
     try {
@@ -3133,7 +3134,6 @@ function ProdePage({ user, addToast }) {
       };
     });
   }
-
 
   function _faseRapi(round) {
     if (!round) return 'grupos';
