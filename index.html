@@ -23,8 +23,7 @@ window.SUPABASE_ANON = 'sb_publishable_uGtX_3HBT1Aduy4s2N5WrA_3QjonanT';
 // Obtené la tuya en: https://console.anthropic.com/keys
 // ═══════════════════════════════════════════════════════════
 // La key Anthropic vive en Supabase Edge Functions Secrets (nunca en este archivo).
-window.CLAUDE_PROXY    = window.SUPABASE_URL + '/functions/v1/claude-proxy';
-window.RAPIDAPI_PROXY  = window.SUPABASE_URL + '/functions/v1/rapidapi-proxy';
+window.CLAUDE_PROXY = window.SUPABASE_URL + '/functions/v1/claude-proxy';
 
 window.__supabase = null;  // se inicializa cuando cargue el SDK
 
@@ -94,7 +93,7 @@ window.RSS2JSON_KEY = 'orknofcobjp0qossgdfetfjxwjehy22ndc910cfr';  // ← pegá 
 // ── GNews API — imágenes reales garantizadas ─────────────────────────────
 // Registrate GRATIS en https://gnews.io → Plan Free = 100 req/día
 // Devuelve el campo "image" directamente en cada artículo, sin proxies.
-window.GNEWS_KEY = '';  // GNews bloqueado por CORS desde github.io — usar NewsData en su lugar
+window.GNEWS_KEY = '';  // GNews bloqueado por CORS desde github.io  // ← pegá tu API key de gnews.io acá
 
 // ── YouTube Data API v3 — streams en vivo ─────────────────────────────────
 // Habilitá "YouTube Data API v3" en el mismo proyecto de Google Cloud del OAuth.
@@ -113,7 +112,8 @@ window.FOOTBALL_DATA_KEY = 'e610b34868b64523af8034caf0ad7b90';  // ← pegá tu 
 // ── RAPIDAPI (API-Football) — Argentina + Libertadores + Mundial ──────────
 // Suscribite en https://rapidapi.com/api-sports/api/api-football
 // Plan Free: 100 req/día. Cubre Liga Profesional, Libertadores, Primera Nacional.
-window.RAPIDAPI_KEY = 'a84e60f8femshaedc7c87782e00dp158566jsn00f4abcada7f';  // ← pegá tu API key de RapidAPI
+window.RAPIDAPI_KEY  = '';             // ya no se usa
+window.APISPORTS_KEY = '848bc1a907e1b48d68cd41db502c9ff5';  // ← pegá acá tu key de dashboard.api-football.com (gratis, sin tarjeta)
 
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
@@ -3088,74 +3088,52 @@ function ProdePage({ user, addToast }) {
     return 'grupos';
   }
 
-  // ── Fetch desde RapidAPI / API-Football (Argentina + Mundial) ────────
-  // Llama a la Supabase Edge Function "rapidapi-proxy" (JWT desactivado en el dashboard)
+  // ── Fetch desde api-sports.io (API-Football directo, CORS libre, sin proxy) ──
+  // Registrate gratis en: https://dashboard.api-football.com/register
+  // Pegá tu key en window.APISPORTS_KEY al inicio del archivo.
   async function fetchDesdeRapidApi(leagueId, season) {
-    const key = window.RAPIDAPI_KEY;
-    if (!key || key === 'TU_RAPIDAPI_KEY_AQUI')
-      throw new Error('Falta RAPIDAPI_KEY — pegá tu clave en la línea window.RAPIDAPI_KEY');
-
-    const apiUrl = `https://api-football-v1.p.rapidapi.com/v3/fixtures?league=${leagueId}&season=${season}`;
-
-    function parseRapidResp(json) {
-      if (json.errors && Object.keys(json.errors).length)
-        throw new Error('RapidAPI error: ' + Object.values(json.errors)[0]);
-      if (!Array.isArray(json.response))
-        throw new Error('RapidAPI: respuesta inesperada — ' + JSON.stringify(json).slice(0, 100));
-      return json.response.map(f => {
-        const st = f.fixture?.status?.short || '';
-        const roundStr = f.league?.round || '';
-        return {
-          api_id: 'ra_' + f.fixture.id,
-          fecha: f.fixture.date,
-          local: f.teams?.home?.name || 'TBD',
-          visitante: f.teams?.away?.name || 'TBD',
-          logo_local: f.teams?.home?.logo || null,
-          logo_visitante: f.teams?.away?.logo || null,
-          jornada: roundStr ? parseInt((roundStr.match(/\d+/) || [''])[0]) || null : null,
-          fase: _faseRapi(roundStr),
-          goles_local: f.goals?.home ?? null,
-          goles_visitante: f.goals?.away ?? null,
-          estado: ['FT','AET','PEN'].includes(st) ? 'finalizado'
-                 : ['1H','HT','2H','ET','BT','P'].includes(st) ? 'en_juego'
-                 : 'programado',
-          picks_cerrados: ['FT','AET','PEN','1H','HT','2H','ET','BT','P'].includes(st),
-        };
-      });
-    }
-
-    // ── Llamar al proxy de Supabase (sin JWT — desactivado en el dashboard) ──
-    const proxyUrl = window.RAPIDAPI_PROXY || (window.SUPABASE_URL + '/functions/v1/rapidapi-proxy');
+    const key = window.APISPORTS_KEY;
+    if (!key || key === 'TU_KEY_AQUI')
+      throw new Error('Falta APISPORTS_KEY — registrate gratis en dashboard.api-football.com y pegá tu key en window.APISPORTS_KEY');
+    const url = `https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}`;
+    let resp;
     try {
-      const resp = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: apiUrl, rapidapi_key: key }),
-      });
-      if (!resp.ok) {
-        const err = await resp.text().catch(() => '');
-        throw new Error(`Proxy ${resp.status}: ${err.slice(0, 120)}`);
-      }
-      const json = await resp.json();
-      const result = parseRapidResp(json);
-      console.log(`RapidAPI (proxy) ✓ league=${leagueId}: ${result.length} partidos`);
-      return result;
+      resp = await fetch(url, { headers: { 'x-apisports-key': key } });
     } catch(e) {
-      // Fallback directo (puede fallar por CORS en algunos planes, pero lo intentamos)
-      console.warn('Proxy falló, intentando directo:', e.message);
-      let resp2;
-      try {
-        resp2 = await fetch(apiUrl, {
-          headers: { 'x-rapidapi-host': 'api-football-v1.p.rapidapi.com', 'x-rapidapi-key': key }
-        });
-      } catch(e2) {
-        throw new Error('RapidAPI no disponible. Verificá que el proxy "rapidapi-proxy" en Supabase tiene JWT desactivado. Error: ' + e.message);
-      }
-      if (resp2.status === 403) throw new Error('RapidAPI 403 — Desactivá "Enforce JWT Verification" en la Edge Function del dashboard de Supabase.');
-      if (!resp2.ok) throw new Error(`RapidAPI HTTP ${resp2.status}`);
-      return parseRapidResp(await resp2.json());
+      throw new Error('api-sports.io: error de red — ' + e.message);
     }
+    if (resp.status === 401 || resp.status === 403)
+      throw new Error('api-sports.io: API key inválida — verificá en dashboard.api-football.com');
+    if (resp.status === 429)
+      throw new Error('api-sports.io: límite diario alcanzado (100 req/día en free tier)');
+    if (!resp.ok) throw new Error('api-sports.io HTTP ' + resp.status);
+    const json = await resp.json();
+    if (json.errors && Object.keys(json.errors).length)
+      throw new Error('api-sports.io error: ' + Object.values(json.errors)[0]);
+    if (!Array.isArray(json.response))
+      throw new Error('api-sports.io: respuesta inesperada — ' + JSON.stringify(json).slice(0,100));
+    return json.response.map(f => {
+      const st = f.fixture?.status?.short || '';
+      const roundStr = f.league?.round || '';
+      return {
+        api_id: 'ra_' + f.fixture.id,
+        fecha: f.fixture.date,
+        local: f.teams?.home?.name || 'TBD',
+        visitante: f.teams?.away?.name || 'TBD',
+        logo_local: f.teams?.home?.logo || null,
+        logo_visitante: f.teams?.away?.logo || null,
+        jornada: roundStr ? parseInt((roundStr.match(/\d+/) || [''])[0]) || null : null,
+        fase: _faseRapi(roundStr),
+        goles_local: f.goals?.home ?? null,
+        goles_visitante: f.goals?.away ?? null,
+        estado: ['FT','AET','PEN'].includes(st) ? 'finalizado'
+               : ['1H','HT','2H','ET','BT','P'].includes(st) ? 'en_juego'
+               : 'programado',
+        picks_cerrados: ['FT','AET','PEN','1H','HT','2H','ET','BT','P'].includes(st),
+      };
+    });
   }
+
 
   function _faseRapi(round) {
     if (!round) return 'grupos';
