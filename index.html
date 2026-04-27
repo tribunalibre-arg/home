@@ -3009,39 +3009,70 @@ function ProdePage({ user, addToast }) {
       setTempActiva(activa.id);
     } else {
       setTemps([]); setTempActiva(null); setPartidos([]);
-      // Auto-importar si tenemos config para esta competencia
-      if (comp && API_COMPS[comp.slug]) {
+      // Auto-importar solo si la clave correspondiente está configurada
+      const cfg = comp && API_COMPS[comp.slug];
+      const keyOk = cfg && (
+        cfg.source === 'fdorg'
+          ? (window.FOOTBALL_DATA_KEY && window.FOOTBALL_DATA_KEY !== 'TU_FOOTBALL_DATA_KEY_AQUI')
+          : (window.RAPIDAPI_KEY && window.RAPIDAPI_KEY !== 'TU_RAPIDAPI_KEY_AQUI')
+      );
+      if (keyOk) {
         await autoImportar(cid, comp);
       }
     }
   }
 
   // ── Fetch desde football-data.org (Europa) ────────────────────────────
+  // El free tier solo permite localhost — ruteamos por proxies CORS que
+  // reenvían headers (corsproxy.io y thingproxy sí lo hacen).
   async function fetchDesdeFootballData(compCode, season) {
     const key = window.FOOTBALL_DATA_KEY;
     if (!key || key === 'TU_FOOTBALL_DATA_KEY_AQUI') throw new Error('Falta FOOTBALL_DATA_KEY — pegá tu clave en la config del archivo');
-    const url = `https://api.football-data.org/v4/competitions/${compCode}/matches?season=${season}`;
-    const resp = await fetch(url, { headers: { 'X-Auth-Token': key } });
-    if (resp.status === 429) throw new Error('football-data.org: límite de requests (rate limit)');
-    if (!resp.ok) throw new Error(`football-data.org HTTP ${resp.status}`);
-    const json = await resp.json();
-    if (!json.matches) throw new Error('football-data.org: sin partidos en la respuesta');
-    return json.matches.map(m => ({
-      api_id: 'fd_' + m.id,
-      fecha: m.utcDate,
-      local: m.homeTeam?.name || 'TBD',
-      visitante: m.awayTeam?.name || 'TBD',
-      logo_local: m.homeTeam?.crest || null,
-      logo_visitante: m.awayTeam?.crest || null,
-      jornada: m.matchday || null,
-      fase: _faseFD(m.stage),
-      goles_local: m.score?.fullTime?.home ?? null,
-      goles_visitante: m.score?.fullTime?.away ?? null,
-      estado: m.status === 'FINISHED' ? 'finalizado'
-             : ['IN_PLAY','PAUSED','HALFTIME'].includes(m.status) ? 'en_juego'
-             : 'programado',
-      picks_cerrados: m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED',
-    }));
+    const apiUrl = `https://api.football-data.org/v4/competitions/${compCode}/matches?season=${season}`;
+    const authHeader = { 'X-Auth-Token': key };
+    const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
+    const fetchT  = (url, opts, ms) => Promise.race([fetch(url, opts), timeout(ms)]);
+
+    // Intentos: 1) directo (por si el plan lo permite), 2-3) proxies CORS
+    const intentos = [
+      () => fetchT(apiUrl, { headers: authHeader }, 10000),
+      () => fetchT(`https://corsproxy.io/?${encodeURIComponent(apiUrl)}`, { headers: authHeader }, 12000),
+      () => fetchT(`https://thingproxy.freeboard.io/fetch/${apiUrl}`, { headers: authHeader }, 12000),
+    ];
+
+    let lastErr;
+    for (const intento of intentos) {
+      try {
+        const resp = await intento();
+        if (resp.status === 429) throw new Error('football-data.org: rate limit — esperá un minuto');
+        if (resp.status === 403) throw new Error('football-data.org: API key inválida o plan insuficiente');
+        if (!resp.ok) throw new Error(`football-data.org HTTP ${resp.status}`);
+        const json = await resp.json();
+        if (!json.matches) throw new Error('football-data.org: sin partidos en la respuesta');
+        return json.matches.map(m => ({
+          api_id: 'fd_' + m.id,
+          fecha: m.utcDate,
+          local: m.homeTeam?.name || 'TBD',
+          visitante: m.awayTeam?.name || 'TBD',
+          logo_local: m.homeTeam?.crest || null,
+          logo_visitante: m.awayTeam?.crest || null,
+          jornada: m.matchday || null,
+          fase: _faseFD(m.stage),
+          goles_local: m.score?.fullTime?.home ?? null,
+          goles_visitante: m.score?.fullTime?.away ?? null,
+          estado: m.status === 'FINISHED' ? 'finalizado'
+                 : ['IN_PLAY','PAUSED','HALFTIME'].includes(m.status) ? 'en_juego'
+                 : 'programado',
+          picks_cerrados: m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED',
+        }));
+      } catch(e) {
+        lastErr = e;
+        // Si es 403/rate-limit no intentar más proxies
+        if (e.message.includes('rate limit') || e.message.includes('API key')) throw e;
+        console.warn('football-data proxy intento ✗:', e.message);
+      }
+    }
+    throw lastErr || new Error('football-data.org: todos los proxies fallaron');
   }
 
   function _faseFD(stage) {
@@ -3059,19 +3090,31 @@ function ProdePage({ user, addToast }) {
   // ── Fetch desde RapidAPI / API-Football (Argentina + Mundial) ────────
   async function fetchDesdeRapidApi(leagueId, season) {
     const key = window.RAPIDAPI_KEY;
-    if (!key || key === 'TU_RAPIDAPI_KEY_AQUI') throw new Error('Falta RAPIDAPI_KEY — pegá tu clave en la config del archivo');
+    if (!key || key === 'TU_RAPIDAPI_KEY_AQUI')
+      throw new Error('Falta RAPIDAPI_KEY — abrí el archivo y pegá tu clave en la línea window.RAPIDAPI_KEY');
     const url = `https://api-football-v1.p.rapidapi.com/v3/fixtures?league=${leagueId}&season=${season}`;
-    const resp = await fetch(url, {
-      headers: {
-        'x-rapidapi-host': 'api-football-v1.p.rapidapi.com',
-        'x-rapidapi-key': key,
-      }
-    });
-    if (resp.status === 429) throw new Error('RapidAPI: límite diario alcanzado (100 req/día en free tier)');
-    if (!resp.ok) throw new Error(`RapidAPI HTTP ${resp.status}`);
+    let resp;
+    try {
+      resp = await fetch(url, {
+        headers: {
+          'x-rapidapi-host': 'api-football-v1.p.rapidapi.com',
+          'x-rapidapi-key': key,
+        }
+      });
+    } catch(e) {
+      throw new Error('RapidAPI: error de red — ' + e.message);
+    }
+    if (resp.status === 403)
+      throw new Error('RapidAPI 403 — verificá que: 1) la key está pegada correctamente, 2) estás suscripto a "API-Football" en rapidapi.com (aun en free tier, hay que hacer clic en Subscribe)');
+    if (resp.status === 429)
+      throw new Error('RapidAPI: límite diario alcanzado (100 req/día en free tier)');
+    if (!resp.ok)
+      throw new Error(`RapidAPI HTTP ${resp.status}`);
     const json = await resp.json();
-    if (json.errors && Object.keys(json.errors).length) throw new Error('RapidAPI: ' + Object.values(json.errors)[0]);
-    if (!Array.isArray(json.response)) throw new Error('RapidAPI: respuesta inesperada');
+    if (json.errors && Object.keys(json.errors).length)
+      throw new Error('RapidAPI error: ' + Object.values(json.errors)[0]);
+    if (!Array.isArray(json.response))
+      throw new Error('RapidAPI: respuesta inesperada — ' + JSON.stringify(json).slice(0,100));
     return json.response.map(f => {
       const st = f.fixture?.status?.short || '';
       const roundStr = f.league?.round || '';
@@ -3808,15 +3851,43 @@ function ProdePage({ user, addToast }) {
             </div>
           )}
           {adminTab==='config' && (
-            <div className="card">
-              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>⚙️ Config del Prode</div>
-              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8}}>Editá en Supabase → Table Editor → prode_config → campo "valor".</div>
-              {Object.entries(config).map(([k,v])=>(
-                <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3}}>
-                  <span style={{fontSize:11,color:'var(--tx2)'}}>{k}</span>
-                  <span style={{fontSize:12,fontWeight:700,color:'var(--cel)'}}>{v}</span>
-                </div>
-              ))}
+            <div>
+              <div className="card cp" style={{marginBottom:10}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>🔑 Estado de API Keys</div>
+                {[
+                  { label:'football-data.org', key:'FOOTBALL_DATA_KEY', placeholder:'TU_FOOTBALL_DATA_KEY_AQUI', link:'https://www.football-data.org/client/register', tip:'Para Champions, La Liga, Premier, etc.' },
+                  { label:'RapidAPI (API-Football)', key:'RAPIDAPI_KEY', placeholder:'TU_RAPIDAPI_KEY_AQUI', link:'https://rapidapi.com/api-sports/api/api-football', tip:'Para Liga Prof., Libertadores, Copa Argentina' },
+                ].map(({label, key, placeholder, link, tip}) => {
+                  const val = window[key];
+                  const ok = val && val !== placeholder;
+                  return (
+                    <div key={key} style={{borderRadius:'var(--rs)',border:`1.5px solid ${ok?'rgba(39,174,96,.3)':'rgba(192,57,43,.25)'}`,background:ok?'rgba(39,174,96,.05)':'rgba(192,57,43,.05)',padding:'9px 12px',marginBottom:8}}>
+                      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:3}}>
+                        <span style={{fontSize:13}}>{ok?'✅':'❌'}</span>
+                        <span style={{fontWeight:700,fontSize:12,color:ok?'#1E8449':'#B03020'}}>{label}</span>
+                      </div>
+                      <div style={{fontSize:11,color:'var(--tx3)',marginBottom:ok?0:6}}>{tip}</div>
+                      {!ok && (
+                        <div style={{fontSize:11,color:'#B03020'}}>
+                          Abrí el archivo HTML, buscá <code style={{background:'rgba(192,57,43,.1)',borderRadius:3,padding:'0 3px'}}>window.{key}</code> al inicio y pegá tu clave. &nbsp;
+                          <a href={link} target="_blank" rel="noreferrer" style={{color:'var(--cel)',fontWeight:600}}>Obtener clave →</a>
+                          {key==='RAPIDAPI_KEY' && <div style={{marginTop:4,fontWeight:600}}>⚠️ En RapidAPI también tenés que hacer clic en "Subscribe" en la página de API-Football aunque sea el plan Free.</div>}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="card">
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>⚙️ Config del Prode</div>
+                <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8}}>Editá en Supabase → Table Editor → prode_config → campo "valor".</div>
+                {Object.entries(config).map(([k,v])=>(
+                  <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3}}>
+                    <span style={{fontSize:11,color:'var(--tx2)'}}>{k}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:'var(--cel)'}}>{v}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>
