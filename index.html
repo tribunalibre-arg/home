@@ -2928,10 +2928,10 @@ function ProdePage({ user, addToast }) {
   // ─────────────────────────────────────────────────────────────────────────
   const API_COMPS = {
     // ── ARGENTINA ────────────────────────────────────────────────────────
-    'liga-profesional':  { source:'rapidapi', id:128,  season:2025, nombre:'Liga Profesional 2025' },
-    'copa-libertadores': { source:'rapidapi', id:13,   season:2025, nombre:'Copa Libertadores 2025' },
-    'primera-nacional':  { source:'rapidapi', id:131,  season:2025, nombre:'Primera Nacional 2025' },
-    'copa-argentina':    { source:'rapidapi', id:130,  season:2025, nombre:'Copa Argentina 2025' },
+    'liga-profesional':  { source:'rapidapi', id:128,  season:2026, nombre:'Liga Profesional 2026' },
+    'copa-libertadores': { source:'rapidapi', id:13,   season:2026, nombre:'Copa Libertadores 2026' },
+    'primera-nacional':  { source:'rapidapi', id:131,  season:2026, nombre:'Primera Nacional 2026' },
+    'copa-argentina':    { source:'rapidapi', id:130,  season:2026, nombre:'Copa Argentina 2026' },
     // ── EUROPA ───────────────────────────────────────────────────────────
     'champions-league':  { source:'rapidapi', id:2,   season:2024, nombre:'Champions League 2024-25' },
     'europa-league':     { source:'rapidapi', id:3,   season:2024, nombre:'Europa League 2024-25' },
@@ -3337,6 +3337,125 @@ function ProdePage({ user, addToast }) {
       addToast({msg:`✅ ${nuevos.length} partidos de ${cfg.nombre}`,type:'ok'});
     } catch(e) { setImportLog(l=>[...l,`❌ ${e.message}`]); addToast({msg:'Error: '+e.message,type:'err'}); }
     setImportando(false);
+  }
+
+  // ── Sincronizar resultados automáticamente desde la API ──────────────────
+  // Trae el fixture actualizado, detecta los partidos que terminaron y
+  // carga resultados + calcula puntos de todos los usuarios automáticamente.
+  const [sincronizando, setSincronizando] = useState(false);
+  const [sincrLog,      setSincrLog]      = useState([]);
+
+  async function adminSincronizarResultados() {
+    const comp = competencias.find(c=>c.id===compActiva);
+    if (!comp || !tempActiva || !API_COMPS[comp.slug]) {
+      addToast({msg:'Seleccioná competencia y temporada primero',type:'err'}); return;
+    }
+    setSincronizando(true); setSincrLog(['🔄 Consultando api-football...']);
+    try {
+      const eventos = await fetchFixtureUnificado(comp.slug);
+      const terminados = eventos.filter(e => e.estado === 'finalizado' && e.goles_local !== null && e.goles_visitante !== null);
+      setSincrLog(l=>[...l, `📡 ${eventos.length} partidos en la API · ${terminados.length} finalizados`]);
+
+      // Traemos los partidos en DB que NO están finalizados todavía
+      const { data: enDB } = await sb.from('prode_partidos')
+        .select('id,api_id,estado,goles_local,goles_visitante')
+        .eq('temporada_id', tempActiva)
+        .neq('estado','finalizado');
+
+      if (!enDB || !enDB.length) { setSincrLog(l=>[...l,'✅ No hay partidos pendientes de actualizar']); setSincronizando(false); return; }
+
+      const dbMap = {};
+      enDB.forEach(p => { if(p.api_id) dbMap[p.api_id] = p; });
+
+      let actualizados = 0, puntosCalculados = 0;
+      for (const ev of terminados) {
+        const dbP = dbMap[ev.api_id];
+        if (!dbP) continue; // no está en esta temporada
+        // Actualizar resultado
+        await sb.from('prode_partidos').update({
+          goles_local: ev.goles_local,
+          goles_visitante: ev.goles_visitante,
+          estado: 'finalizado',
+          picks_cerrados: true,
+        }).eq('id', dbP.id);
+        actualizados++;
+        // Calcular puntos para todos los usuarios
+        try {
+          const { data: calc } = await sb.rpc('calcular_puntos_partido', { p_partido_id: dbP.id });
+          puntosCalculados += (calc || 0);
+        } catch(e) { /* si la función RPC no existe, seguimos igual */ }
+        setSincrLog(l=>[...l, `⚽ Actualizado: ${ev.api_id} → ${ev.goles_local}-${ev.goles_visitante}`]);
+      }
+
+      setSincrLog(l=>[...l, `🏆 Listo: ${actualizados} resultados actualizados · ${puntosCalculados} picks calculados`]);
+      addToast({msg:`✅ Sincronizado: ${actualizados} partidos`, type:'ok'});
+      if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); }
+    } catch(e) {
+      setSincrLog(l=>[...l, `❌ ${e.message}`]);
+      addToast({msg:'Error sincronizando: '+e.message, type:'err'});
+    }
+    setSincronizando(false);
+  }
+
+  // ── Fallback IA: Claude busca el fixture si la API falla ─────────────────
+  const [buscandoIA, setBuscandoIA] = useState(false);
+
+  async function buscarFixtureConIA() {
+    const comp = competencias.find(c=>c.id===compActiva);
+    if (!comp) { addToast({msg:'Seleccioná competencia primero',type:'err'}); return; }
+    if (!window.CLAUDE_PROXY) { addToast({msg:'Proxy Claude no configurado',type:'err'}); return; }
+    setBuscandoIA(true);
+    addToast({msg:'🤖 Claude está buscando el fixture...', type:'ok'});
+    try {
+      const prompt = `Buscá en la web el fixture completo de ${comp.nombre} 2026 en Argentina.
+Devolvé SOLO un JSON válido con este formato exacto, sin texto adicional ni markdown:
+{"partidos":[{"fecha":"2026-01-25T20:00:00-03:00","local":"Nombre equipo","visitante":"Nombre equipo","jornada":1,"fase":"grupos","zona":"Zona A"}]}
+Incluí todos los partidos que encuentres. Fechas en formato ISO 8601 con zona horaria Argentina (-03:00).`;
+
+      const resp = await fetch(window.CLAUDE_PROXY, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          model:'claude-sonnet-4-20250514',
+          max_tokens:4000,
+          tools:[{type:'web_search_20250305',name:'web_search'}],
+          messages:[{role:'user',content:prompt}]
+        })
+      });
+      if (!resp.ok) throw new Error('Claude proxy HTTP ' + resp.status);
+      const data = await resp.json();
+      // Extraer el texto de la respuesta
+      const textos = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+      // Parsear JSON
+      const match = textos.match(/\{[\s\S]*"partidos"[\s\S]*\}/);
+      if (!match) throw new Error('Claude no devolvió JSON válido — intentá de nuevo');
+      const parsed = JSON.parse(match[0]);
+      if (!parsed.partidos || !parsed.partidos.length) throw new Error('Claude no encontró partidos');
+
+      // Crear temporada e insertar
+      const nombre = comp.nombre + ' 2026';
+      const { data: nt, error: et } = await sb.from('prode_temporadas').insert({
+        competencia_id: compActiva, nombre, activa:true,
+        fecha_inicio: parsed.partidos[0]?.fecha||null,
+        fecha_fin: parsed.partidos[parsed.partidos.length-1]?.fecha||null,
+      }).select().single();
+      if (et) throw new Error(et.message);
+
+      const rows = parsed.partidos.map(p=>({
+        temporada_id: nt.id, competencia_id: compActiva,
+        fecha: p.fecha, local: p.local, visitante: p.visitante,
+        jornada: p.jornada||null, fase: p.fase||'grupos', zona: p.zona||null,
+        estado:'programado', picks_cerrados:false,
+      }));
+      for (let i=0;i<rows.length;i+=50)
+        await sb.from('prode_partidos').insert(rows.slice(i,i+50));
+
+      addToast({msg:`🤖 IA cargó ${rows.length} partidos de ${nombre}`, type:'ok'});
+      cargarTemporadasYFixture(compActiva);
+    } catch(e) {
+      addToast({msg:'IA: '+e.message, type:'err'});
+    }
+    setBuscandoIA(false);
   }
 
   // ── Helpers ──
@@ -3802,6 +3921,20 @@ function ProdePage({ user, addToast }) {
           {adminTab==='resultados' && (
             <div className="card">
               <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>✅ Cargar resultado</div>
+
+              {/* Auto-sync desde API */}
+              <button onClick={adminSincronizarResultados} disabled={sincronizando||!tempActiva}
+                style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
+                  background:sincronizando?'#aaa':'#2E6FB5',color:'white',marginBottom:10}}>
+                {sincronizando?'⏳ Sincronizando...':'🔄 Auto-sincronizar resultados desde API'}
+              </button>
+              {sincrLog.length > 0 && (
+                <div style={{marginBottom:10,background:'rgba(46,111,181,.07)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:100,overflowY:'auto'}}>
+                  {sincrLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
+                </div>
+              )}
+
+              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8,textAlign:'center'}}>— o cargá manualmente —</div>
               <select value={formResultado.partido_id} onChange={e=>setFormR(r=>({...r,partido_id:e.target.value}))}
                 style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12,marginBottom:8}}>
                 <option value="">— Elegí el partido —</option>
@@ -3820,11 +3953,46 @@ function ProdePage({ user, addToast }) {
           {adminTab==='temporadas' && (
             <div>
               <div className="card" style={{marginBottom:8,border:'1.5px solid rgba(34,197,94,.3)'}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:5,color:'var(--green)'}}>📥 Auto-importar</div>
-                <button onClick={adminImportarFixture} disabled={importando||!API_COMPS[compObj?.slug]}
-                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,background:'var(--green)',color:'white'}}>
-                  {importando?'⏳ Importando...':'📥 Importar fixture · '+( compObj?.nombre||'competencia')}
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:5,color:'var(--green)'}}>📥 Fixture automático</div>
+
+                {/* Botón principal: importar desde api-football */}
+                <button onClick={adminImportarFixture} disabled={importando||buscandoIA||!API_COMPS[compObj?.slug]}
+                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,background:'var(--green)',color:'white',marginBottom:6}}>
+                  {importando?'⏳ Importando...':'📥 Importar fixture · '+(compObj?.nombre||'competencia')}
                 </button>
+
+                {/* Botón: sincronizar resultados terminados */}
+                <button onClick={adminSincronizarResultados} disabled={sincronizando||importando||buscandoIA||!tempActiva}
+                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
+                    background:sincronizando?'#aaa':'#2E6FB5',color:'white',marginBottom:6}}>
+                  {sincronizando?'⏳ Sincronizando...':'🔄 Sincronizar resultados (auto-puntos)'}
+                </button>
+
+                {/* Botón fallback: Claude IA busca en la web */}
+                <button onClick={buscarFixtureConIA} disabled={buscandoIA||importando||sincronizando}
+                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
+                    background:buscandoIA?'#aaa':'#B7770D',color:'white',marginBottom:8}}>
+                  {buscandoIA?'🤖 Claude buscando...':'🤖 Buscar con IA (si la API falla)'}
+                </button>
+                <div style={{fontSize:10,color:'var(--tx3)',lineHeight:1.5}}>
+                  💡 <b>Importar:</b> trae el fixture completo de la temporada.<br/>
+                  💡 <b>Sincronizar:</b> actualiza resultados de partidos terminados y calcula puntos automáticamente.<br/>
+                  💡 <b>Buscar con IA:</b> Claude busca en la web si la API no responde.
+                </div>
+
+                {/* Log de importación */}
+                {importLog.length > 0 && (
+                  <div style={{marginTop:8,background:'var(--bg2)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
+                    {importLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
+                  </div>
+                )}
+
+                {/* Log de sincronización */}
+                {sincrLog.length > 0 && (
+                  <div style={{marginTop:8,background:'rgba(46,111,181,.07)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
+                    {sincrLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
+                  </div>
+                )}
               </div>
               <div className="card">
                 <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>📅 Crear temporada manual</div>
