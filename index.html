@@ -43,7 +43,9 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
           var user = res.data.session.user;
           window.__supabaseUser = {
             displayName: user.user_metadata?.full_name || user.user_metadata?.displayName || user.email?.split('@')[0] || 'Usuario',
+            id: user.id,
             email: user.email,
+            username: user.user_metadata?.full_name || user.user_metadata?.displayName || user.email?.split('@')[0] || 'Usuario',
             rep: 0,
             isGuest: false
           };
@@ -2890,1178 +2892,902 @@ function StreamingPage({ addToast }) {
 
 
 function ProdePage({ user, addToast }) {
-  const isAdmin = user && (user.role === 'admin' || user.email === 'tribunalibre@gmail.com');
   const sb = window.__supabase;
+  const isMobile = () => window.innerWidth < 640;
+  const isAdmin = user && !user.isGuest && (user.role === 'admin' || user.email === 'tribunalibre@gmail.com');
 
-  // ── Estado principal ──
-  const [tab,          setTab]         = useState('predecir');
-  const [competencias, setComp]        = useState([]);
-  const [compActiva,   setCompActiva]  = useState(null);
-  const [temporadas,   setTemps]       = useState([]);
-  const [tempActiva,   setTempActiva]  = useState(null);
-  const [partidos,     setPartidos]    = useState([]);
-  const [picks,        setPicks]       = useState({});
-  const [enviando,     setEnviando]    = useState(false);
-  const [enviado,      setEnviado]     = useState({});
-  const [ranking,      setRanking]     = useState([]);
-  const [misLogros,    setMisLogros]   = useState([]);
-  const [logros,       setLogros]      = useState([]);
-  const [cargando,     setCargando]    = useState(true);
-  const [cargandoFix,  setCargandoFix] = useState(false);
-  const [config,       setConfig]      = useState({});
-  const [favEquipos,   setFavEquipos]  = useState(() => {
-    try { return JSON.parse(localStorage.getItem('tl_fav_equipos') || '[]'); } catch { return []; }
-  });
-  const [buscandoEq,   setBuscandoEq]  = useState('');
+  // ── Estado ──────────────────────────────────────────────
+  const [tab,        setTab]        = useState('predecir'); // predecir | ranking | mispuntos
+  const [comp,       setComp]       = useState('liga-pro');
+  const [picks,      setPicks]      = useState({});      // {matchId: 'value'}
+  const [results,    setResults]    = useState({});      // {matchId: 'value'} — admin
+  const [ranking,    setRanking]    = useState([]);
+  const [allPicks,   setAllPicks]   = useState([]);      // todos los picks de todos los users
+  const [loading,    setLoading]    = useState(false);
+  const [mobile,     setMobile]     = useState(isMobile());
+  const [openRounds, setOpenRounds] = useState({});      // accordion mobile
+  const [search,     setSearch]     = useState('');
+  const [filterFecha,setFilterFecha]= useState('all');
+  const [adminMode,  setAdminMode]  = useState(false);
+  const [saving,     setSaving]     = useState(false);
 
-  // ── Admin ──
-  const [adminTab,      setAdminTab]  = useState('partidos');
-  const [formPartido,   setFormP]     = useState({ local:'', visitante:'', fecha:'', fase:'grupos', jornada:'', zona:'' });
-  const [formResultado, setFormR]     = useState({ partido_id:'', gl:'', gv:'' });
-  const [formTemp,      setFormT]     = useState({ nombre:'', fecha_inicio:'', fecha_fin:'' });
-  const [importando,    setImportando]= useState(false);
-  const [importLog,     setImportLog] = useState([]);
-
-  // ── Configuración de fuentes de fixture ──────────────────────────────────
-  // source: 'fdorg'    → football-data.org  (Europa: CL, La Liga, Premier…)
-  // source: 'rapidapi' → API-Football/RapidAPI (Argentina, Libertadores, Mundial…)
-  // ─────────────────────────────────────────────────────────────────────────
-  const API_COMPS = {
-    // ── ARGENTINA ────────────────────────────────────────────────────────
-    'liga-profesional':  { source:'rapidapi', id:128,  season:2026, nombre:'Liga Profesional 2026' },
-    'copa-libertadores': { source:'rapidapi', id:13,   season:2026, nombre:'Copa Libertadores 2026' },
-    'primera-nacional':  { source:'rapidapi', id:131,  season:2026, nombre:'Primera Nacional 2026' },
-    'copa-argentina':    { source:'rapidapi', id:130,  season:2026, nombre:'Copa Argentina 2026' },
-    // ── EUROPA ───────────────────────────────────────────────────────────
-    'champions-league':  { source:'rapidapi', id:2,   season:2024, nombre:'Champions League 2024-25' },
-    'europa-league':     { source:'rapidapi', id:3,   season:2024, nombre:'Europa League 2024-25' },
-    'la-liga':           { source:'rapidapi', id:140, season:2024, nombre:'La Liga 2024-25' },
-    'premier-league':    { source:'rapidapi', id:39,  season:2024, nombre:'Premier League 2024-25' },
-    'serie-a':           { source:'rapidapi', id:135, season:2024, nombre:'Serie A 2024-25' },
-    'bundesliga':        { source:'rapidapi', id:78,  season:2024, nombre:'Bundesliga 2024-25' },
-    // ── MUNDIAL ──────────────────────────────────────────────────────────
-    'mundial-2026':      { source:'rapidapi', id:1,    season:2026, nombre:'Copa del Mundo 2026' },
-  };
-  // Mantener alias para compatibilidad con código existente
-  const TSDB_IDS = API_COMPS;
-
-  const COMP_EMOJI = {
-    'liga-profesional':'⚽','copa-libertadores':'🌎','primera-nacional':'🥈',
-    'copa-argentina':'🏆','champions-league':'👑','europa-league':'🟠',
-    'la-liga':'🇪🇸','premier-league':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','serie-a':'🇮🇹','bundesliga':'🇩🇪',
-    'mundial-2026':'🌍'
-  };
-
-  // ── Equipos conocidos por competencia para el selector de favoritos ──
-  const EQUIPOS_CONOCIDOS = {
-    'liga-profesional': ['River','Boca','Racing','San Lorenzo','Independiente','Vélez','Huracán','Lanús','Estudiantes','Gimnasia','Belgrano','Talleres','Newell\'s','Rosario Central'],
-    'copa-libertadores': ['River','Boca','Racing','Flamengo','Fluminense','Palmeiras','Atlético MG','Junior','LDU','Olimpia','Cerro Porteño','Peñarol','Nacional','Colo-Colo'],
-    'champions-league': ['Real Madrid','Bayern Munich','Manchester City','PSG','Arsenal','Liverpool','Barcelona','Atlético Madrid','Inter','Juventus','Borussia','Chelsea','Porto','Benfica'],
-    'europa-league': ['Atalanta','Roma','Fiorentina','Villarreal','Bayer Leverkusen','Lyon','Ajax','PSV','Rangers','Fenerbahçe','West Ham','Sevilla'],
-    'primera-nacional': ['Instituto','Estudiantes BA','Belgrano B','Quilmes','Atlanta','Deportivo Madryn','San Martín SJ'],
-    'copa-argentina': ['River','Boca','Racing','San Lorenzo','Independiente','Vélez','Belgrano','Talleres'],
-    'mundial-2026': ['Argentina','Brasil','Francia','Inglaterra','España','Alemania','Portugal','Uruguay','Colombia','México','EEUU','Marruecos'],
-  };
-
-  // ── Efectos ──
-  useEffect(() => { cargarTodo(); }, []);
-  useEffect(() => { if (compActiva) cargarTemporadasYFixture(compActiva); }, [compActiva]);
-  useEffect(() => { if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); } }, [tempActiva]);
-
-  // ── Guardar favoritos en localStorage ──
-  function toggleFavorito(eq) {
-    setFavEquipos(prev => {
-      const next = prev.includes(eq) ? prev.filter(e=>e!==eq) : prev.length >= 5 ? prev : [...prev, eq];
-      try { localStorage.setItem('tl_fav_equipos', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }
-
-  // ── Carga inicial ──
-  async function cargarTodo() {
-    setCargando(true);
-    if (!sb) { setCargando(false); return; }
-    try {
-      const [{ data: comps }, { data: cfg }, { data: lg }] = await Promise.all([
-        sb.from('prode_competencias').select('*').eq('activa', true).order('orden'),
-        sb.from('prode_config').select('*'),
-        sb.from('prode_logros').select('*').eq('activo', true),
-      ]);
-      if (comps && comps.length) {
-        setComp(comps);
-        setCompActiva(comps[0].id); // selecciona la primera por defecto
-      }
-      if (cfg) { const m={}; cfg.forEach(r=>{m[r.clave]=r.valor;}); setConfig(m); }
-      if (lg) setLogros(lg);
-      if (user && !user.isGuest) cargarMisLogros();
-    } catch(e) { addToast({ msg:'Error cargando el Prode', type:'err' }); }
-    setCargando(false);
-  }
-
-  // ── Temporadas + auto-import si no hay datos ──
-  async function cargarTemporadasYFixture(cid) {
-    if (!sb) return;
-    const comp = competencias.find(c => c.id === cid) || (await sb.from('prode_competencias').select('*').eq('id',cid).single()).data;
-    const { data: temps } = await sb.from('prode_temporadas').select('*').eq('competencia_id', cid).order('created_at', { ascending: false });
-
-    if (temps && temps.length) {
-      setTemps(temps);
-      const activa = temps.find(t => t.activa) || temps[0];
-      setTempActiva(activa.id);
-    } else {
-      setTemps([]); setTempActiva(null); setPartidos([]);
-      // Auto-importar solo si la clave correspondiente está configurada
-      const cfg = comp && API_COMPS[comp.slug];
-      const keyOk = cfg && (
-        cfg.source === 'fdorg'
-          ? (window.FOOTBALL_DATA_KEY && window.FOOTBALL_DATA_KEY !== 'TU_FOOTBALL_DATA_KEY_AQUI')
-          : (window.RAPIDAPI_KEY && window.RAPIDAPI_KEY !== 'TU_RAPIDAPI_KEY_AQUI')
-      );
-      if (keyOk) {
-        await autoImportar(cid, comp);
-      }
-    }
-  }
-
-  // ── Fetch desde football-data.org (Europa) ────────────────────────────
-  // El free tier solo permite localhost — ruteamos por proxies CORS que
-  // reenvían headers (corsproxy.io y thingproxy sí lo hacen).
-  async function fetchDesdeFootballData(compCode, season) {
-    const key = window.FOOTBALL_DATA_KEY;
-    if (!key || key === 'TU_FOOTBALL_DATA_KEY_AQUI') throw new Error('Falta FOOTBALL_DATA_KEY — pegá tu clave en la config del archivo');
-    const apiUrl = `https://api.football-data.org/v4/competitions/${compCode}/matches?season=${season}`;
-    const authHeader = { 'X-Auth-Token': key };
-    const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
-    const fetchT  = (url, opts, ms) => Promise.race([fetch(url, opts), timeout(ms)]);
-
-    // Intentos: 1) directo (por si el plan lo permite), 2-3) proxies CORS
-    const intentos = [
-      () => fetchT(apiUrl, { headers: authHeader }, 10000),
-      () => fetchT(`https://corsproxy.io/?${encodeURIComponent(apiUrl)}`, { headers: authHeader }, 12000),
-      () => fetchT(`https://thingproxy.freeboard.io/fetch/${apiUrl}`, { headers: authHeader }, 12000),
-    ];
-
-    let lastErr;
-    for (const intento of intentos) {
-      try {
-        const resp = await intento();
-        if (resp.status === 429) throw new Error('football-data.org: rate limit — esperá un minuto');
-        if (resp.status === 403) throw new Error('football-data.org: API key inválida o plan insuficiente');
-        if (!resp.ok) throw new Error(`football-data.org HTTP ${resp.status}`);
-        const json = await resp.json();
-        if (!json.matches) throw new Error('football-data.org: sin partidos en la respuesta');
-        return json.matches.map(m => ({
-          api_id: 'fd_' + m.id,
-          fecha: m.utcDate,
-          local: m.homeTeam?.name || 'TBD',
-          visitante: m.awayTeam?.name || 'TBD',
-          logo_local: m.homeTeam?.crest || null,
-          logo_visitante: m.awayTeam?.crest || null,
-          jornada: m.matchday || null,
-          fase: _faseFD(m.stage),
-          goles_local: m.score?.fullTime?.home ?? null,
-          goles_visitante: m.score?.fullTime?.away ?? null,
-          estado: m.status === 'FINISHED' ? 'finalizado'
-                 : ['IN_PLAY','PAUSED','HALFTIME'].includes(m.status) ? 'en_juego'
-                 : 'programado',
-          picks_cerrados: m.status === 'FINISHED' || m.status === 'IN_PLAY' || m.status === 'PAUSED',
-        }));
-      } catch(e) {
-        lastErr = e;
-        // Si es 403/rate-limit no intentar más proxies
-        if (e.message.includes('rate limit') || e.message.includes('API key')) throw e;
-        console.warn('football-data proxy intento ✗:', e.message);
-      }
-    }
-    throw lastErr || new Error('football-data.org: todos los proxies fallaron');
-  }
-
-  function _faseFD(stage) {
-    if (!stage) return 'grupos';
-    const s = stage.toUpperCase();
-    if (s === 'FINAL') return 'final';
-    if (s.includes('SEMI')) return 'semis';
-    if (s.includes('QUARTER')) return 'cuartos';
-    if (s.includes('LAST_16') || s.includes('ROUND_OF_16')) return '16avos';
-    if (s.includes('LAST_32')) return '32avos';
-    if (s.includes('LAST_8') || s.includes('ROUND_OF_8')) return '8vos';
-    return 'grupos';
-  }
-
-  // ── Fetch desde api-sports.io (directo desde el browser, sin proxy ni CORS) ──
-  // Una única key para Argentina + Europa + Mundial.
-  // Registrate gratis (sin tarjeta) en: https://dashboard.api-football.com/register
-  // Pegá tu key en window.APISPORTS_KEY al inicio del archivo.
-  async function fetchDesdeRapidApi(leagueId, season) {
-    const key = window.APISPORTS_KEY;
-    if (!key || key === 'TU_KEY_AQUI')
-      throw new Error('Falta APISPORTS_KEY — registrate gratis en dashboard.api-football.com y pegá tu key');
-    const url = `https://v3.football.api-sports.io/fixtures?league=${leagueId}&season=${season}`;
-    let resp;
-    try {
-      resp = await fetch(url, { headers: { 'x-apisports-key': key } });
-    } catch(e) {
-      throw new Error('api-sports.io: error de red — ' + e.message);
-    }
-    if (resp.status === 401 || resp.status === 403)
-      throw new Error('api-sports.io: API key inválida — verificá en dashboard.api-football.com');
-    if (resp.status === 429)
-      throw new Error('api-sports.io: límite diario alcanzado (100 req/día en free tier)');
-    if (!resp.ok) throw new Error('api-sports.io HTTP ' + resp.status);
-    const json = await resp.json();
-    if (json.errors && Object.keys(json.errors).length)
-      throw new Error('api-sports.io error: ' + Object.values(json.errors)[0]);
-    if (!Array.isArray(json.response))
-      throw new Error('api-sports.io: respuesta inesperada — ' + JSON.stringify(json).slice(0,100));
-    return json.response.map(f => {
-      const st = f.fixture?.status?.short || '';
-      const roundStr = f.league?.round || '';
-      return {
-        api_id: 'ra_' + f.fixture.id,
-        fecha: f.fixture.date,
-        local: f.teams?.home?.name || 'TBD',
-        visitante: f.teams?.away?.name || 'TBD',
-        logo_local: f.teams?.home?.logo || null,
-        logo_visitante: f.teams?.away?.logo || null,
-        jornada: roundStr ? parseInt((roundStr.match(/\d+/) || [''])[0]) || null : null,
-        fase: _faseRapi(roundStr),
-        goles_local: f.goals?.home ?? null,
-        goles_visitante: f.goals?.away ?? null,
-        estado: ['FT','AET','PEN'].includes(st) ? 'finalizado'
-               : ['1H','HT','2H','ET','BT','P'].includes(st) ? 'en_juego'
-               : 'programado',
-        picks_cerrados: ['FT','AET','PEN','1H','HT','2H','ET','BT','P'].includes(st),
-      };
-    });
-  }
-
-  function _faseRapi(round) {
-    if (!round) return 'grupos';
-    const r = round.toLowerCase();
-    if (r === 'final' || (r.includes('final') && !r.includes('semi') && !r.includes('quarter') && !r.includes('16') && !r.includes('32'))) return 'final';
-    if (r.includes('semi')) return 'semis';
-    if (r.includes('quarter')) return 'cuartos';
-    if (r.includes('16')) return '16avos';
-    if (r.includes('32')) return '32avos';
-    if (r.includes('8') && !r.includes('16') && !r.includes('32')) return '8vos';
-    return 'grupos';
-  }
-
-  // ── Fetch unificado ────────────────────────────────────────────────────
-  async function fetchFixtureUnificado(slug) {
-    const cfg = API_COMPS[slug];
-    if (!cfg) throw new Error('Competencia no configurada: ' + slug);
-    if (cfg.source === 'fdorg') return fetchDesdeFootballData(cfg.id, cfg.season);
-    if (cfg.source === 'rapidapi') return fetchDesdeRapidApi(cfg.id, cfg.season);
-    throw new Error('Fuente desconocida: ' + cfg.source);
-  }
-
-  // ── Auto-importación silenciosa (sin admin) ──
-  async function autoImportar(cid, comp) {
-    const cfg = API_COMPS[comp.slug];
-    if (!cfg || !sb) return;
-    setCargandoFix(true);
-    try {
-      const eventos = await fetchFixtureUnificado(comp.slug);
-      if (!eventos.length) { setCargandoFix(false); return; }
-
-      const { data: newTemp, error: errTemp } = await sb.from('prode_temporadas').insert({
-        competencia_id: cid, nombre: cfg.nombre, activa: true,
-        fecha_inicio: eventos[0]?.fecha || null,
-        fecha_fin:    eventos[eventos.length-1]?.fecha || null,
-      }).select().single();
-      if (errTemp || !newTemp) { setCargandoFix(false); return; }
-
-      const rows = eventos.map(e => ({
-        temporada_id: newTemp.id, competencia_id: cid, api_id: e.api_id,
-        fecha: e.fecha, local: e.local, visitante: e.visitante,
-        logo_local: e.logo_local, logo_visitante: e.logo_visitante,
-        jornada: e.jornada, fase: e.fase,
-        goles_local: e.goles_local, goles_visitante: e.goles_visitante,
-        estado: e.estado, picks_cerrados: e.picks_cerrados,
-      }));
-      for (let i = 0; i < rows.length; i += 50) {
-        await sb.from('prode_partidos').insert(rows.slice(i, i + 50));
-      }
-      const { data: temps2 } = await sb.from('prode_temporadas').select('*').eq('competencia_id', cid).order('created_at', { ascending: false });
-      if (temps2 && temps2.length) { setTemps(temps2); setTempActiva(newTemp.id); }
-      addToast({ msg: `✅ Fixture cargado: ${rows.length} partidos de ${cfg.nombre}`, type:'ok' });
-    } catch(e) { console.warn('auto-import:', e.message); addToast({ msg: '⚠️ ' + e.message, type:'err' }); }
-    setCargandoFix(false);
-  }
-
-  async function cargarPartidos(tid) {
-    if (!sb) return;
-    const { data } = await sb.from('prode_partidos').select('*').eq('temporada_id', tid).order('fecha');
-    setPartidos(data || []);
-    if (user && !user.isGuest) cargarMisPicks(data || []);
-  }
-
-  async function cargarMisPicks(parts) {
-    if (!sb || !user || user.isGuest || !parts.length) return;
-    const { data: sess } = await sb.auth.getSession();
-    const uid = sess?.session?.user?.id; if (!uid) return;
-    const { data } = await sb.from('prode_picks').select('*').eq('user_id', uid).in('partido_id_nuevo', parts.map(p=>p.id));
-    if (data) { const m={}; data.forEach(p=>{m[p.partido_id_nuevo]={gl:p.goles_local,gv:p.goles_visitante,puntos:p.puntos_obtenidos,calculado:p.calculado};}); setPicks(m); }
-  }
-
-  async function cargarRanking(tid) {
-    if (!sb) return;
-    const { data } = await sb.rpc('get_ranking_temporada', { p_temporada_id: tid, p_limite: 20 });
-    setRanking(data || []);
-  }
-
-  async function cargarMisLogros() {
-    if (!sb || !user || user.isGuest) return;
-    const { data: sess } = await sb.auth.getSession();
-    const uid = sess?.session?.user?.id; if (!uid) return;
-    const { data } = await sb.from('prode_logros_usuario').select('logro_id').eq('user_id', uid);
-    if (data) setMisLogros(data.map(l=>l.logro_id));
-  }
-
-  function detectarFase(e) {
-    const r = (e.strRound||e.intRound||'').toString().toLowerCase();
-    if (r.includes('semi'))    return 'semis';
-    if (r.includes('quarter')) return 'cuartos';
-    if (r.includes('final') && !r.includes('semi') && !r.includes('quarter') && !r.includes('16') && !r.includes('32')) return 'final';
-    if (r.includes('16') || r.includes('round of 16')) return '16avos';
-    if (r.includes('32') || r.includes('round of 32')) return '32avos';
-    if (r.includes('8'))       return '8vos';
-    return 'grupos';
-  }
-
-  // ── Pick ──
-  function setPick(pid, field, val) {
-    if (enviado[pid]) return;
-    setPicks(p=>({...p,[pid]:{...p[pid],[field]:val}}));
-  }
-
-  async function enviarPick(partido) {
-    if (!user || user.isGuest) { addToast({msg:'Iniciá sesión para predecir 🔒',type:'err'}); return; }
-    if (partido.picks_cerrados || partido.estado!=='programado') { addToast({msg:'Los picks están cerrados',type:'err'}); return; }
-    const pick = picks[partido.id];
-    if (pick?.gl===undefined || pick?.gv===undefined || pick?.gl==='' || pick?.gv==='') { addToast({msg:'Ingresá el marcador completo',type:'err'}); return; }
-    setEnviando(true);
-    try {
-      const { data: sess } = await sb.auth.getSession();
-      const uid = sess?.session?.user?.id;
-      const { error } = await sb.from('prode_picks').upsert({
-        user_id: uid, username: user?.displayName||'Anónimo',
-        partido_id_nuevo: partido.id, partido_id: partido.id,
-        goles_local: parseInt(pick.gl), goles_visitante: parseInt(pick.gv),
-      }, { onConflict: 'user_id,partido_id_nuevo' });
-      if (error) throw error;
-      setEnviado(e=>({...e,[partido.id]:true}));
-      addToast({msg:`✅ Pick: ${partido.local} ${pick.gl}-${pick.gv} ${partido.visitante}`,type:'ok'});
-    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
-    setEnviando(false);
-  }
-
-  // ── Admin: resultado ──
-  async function adminCargarResultado(e) {
-    e.preventDefault();
-    if (!formResultado.partido_id||formResultado.gl===''||formResultado.gv==='') { addToast({msg:'Completá todos los campos',type:'err'}); return; }
-    try {
-      await sb.from('prode_partidos').update({ goles_local:parseInt(formResultado.gl), goles_visitante:parseInt(formResultado.gv), estado:'finalizado' }).eq('id',formResultado.partido_id);
-      const { data } = await sb.rpc('calcular_puntos_partido',{p_partido_id:formResultado.partido_id});
-      addToast({msg:`✅ Resultado cargado · ${data} picks calculados`,type:'ok'});
-      setFormR({partido_id:'',gl:'',gv:''});
-      if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); }
-    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
-  }
-
-  async function adminCrearPartido(e) {
-    e.preventDefault();
-    if (!compActiva||!tempActiva) { addToast({msg:'Seleccioná competencia y temporada',type:'err'}); return; }
-    if (!formPartido.local||!formPartido.visitante||!formPartido.fecha) { addToast({msg:'Completá local, visitante y fecha',type:'err'}); return; }
-    try {
-      await sb.from('prode_partidos').insert({ temporada_id:tempActiva, competencia_id:compActiva, local:formPartido.local, visitante:formPartido.visitante, fecha:formPartido.fecha, fase:formPartido.fase, jornada:formPartido.jornada?parseInt(formPartido.jornada):null, zona:formPartido.zona||null, estado:'programado' });
-      addToast({msg:'✅ Partido agregado',type:'ok'});
-      setFormP({local:'',visitante:'',fecha:'',fase:'grupos',jornada:'',zona:''});
-      cargarPartidos(tempActiva);
-    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
-  }
-
-  async function adminCrearTemp(e) {
-    e.preventDefault();
-    if (!compActiva||!formTemp.nombre) { addToast({msg:'Ingresá el nombre',type:'err'}); return; }
-    try {
-      await sb.from('prode_temporadas').insert({ competencia_id:compActiva, nombre:formTemp.nombre, fecha_inicio:formTemp.fecha_inicio||null, fecha_fin:formTemp.fecha_fin||null, activa:true });
-      addToast({msg:`✅ Temporada "${formTemp.nombre}" creada`,type:'ok'});
-      setFormT({nombre:'',fecha_inicio:'',fecha_fin:''});
-      cargarTemporadasYFixture(compActiva);
-    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
-  }
-
-  async function adminImportarFixture() {
-    const comp = competencias.find(c=>c.id===compActiva);
-    if (!comp || !API_COMPS[comp.slug]) { addToast({msg:'Sin configuración de API para esta competencia',type:'err'}); return; }
-    const cfg = API_COMPS[comp.slug];
-    const srcLabel = cfg.source === 'fdorg' ? 'football-data.org' : 'RapidAPI (API-Football)';
-    setImportando(true); setImportLog([`🔄 Conectando a ${srcLabel}...`]);
-    try {
-      const eventos = await fetchFixtureUnificado(comp.slug);
-      if (!eventos.length) { setImportLog(l=>[...l,'⚠️ Sin partidos en la respuesta']); setImportando(false); return; }
-      setImportLog(l=>[...l,`✅ ${eventos.length} partidos recibidos de ${srcLabel}`]);
-
-      const tempExiste = temporadas.find(t=>t.nombre===cfg.nombre);
-      let tid = tempExiste?.id;
-      if (!tid) {
-        const { data: nt, error: et } = await sb.from('prode_temporadas').insert({
-          competencia_id:compActiva, nombre:cfg.nombre, activa:true,
-          fecha_inicio:eventos[0]?.fecha||null, fecha_fin:eventos[eventos.length-1]?.fecha||null
-        }).select().single();
-        if (et) throw new Error(et.message);
-        tid = nt.id;
-        setImportLog(l=>[...l,'📅 Temporada creada: ' + cfg.nombre]);
-      }
-
-      const { data: exist } = await sb.from('prode_partidos').select('api_id').eq('temporada_id',tid);
-      const yaEx = new Set((exist||[]).map(p=>p.api_id));
-      const nuevos = eventos.filter(e=>e.api_id&&!yaEx.has(e.api_id)).map(e=>({
-        temporada_id:tid, competencia_id:compActiva, api_id:e.api_id,
-        fecha:e.fecha, local:e.local, visitante:e.visitante,
-        logo_local:e.logo_local, logo_visitante:e.logo_visitante,
-        jornada:e.jornada, fase:e.fase,
-        goles_local:e.goles_local, goles_visitante:e.goles_visitante,
-        estado:e.estado, picks_cerrados:e.picks_cerrados,
-      }));
-      let ins=0;
-      for (let i=0;i<nuevos.length;i+=50) {
-        await sb.from('prode_partidos').insert(nuevos.slice(i,i+50));
-        ins+=Math.min(50,nuevos.length-i);
-        setImportLog(l=>[...l,`⚽ ${ins}/${nuevos.length} partidos guardados`]);
-      }
-      setImportLog(l=>[...l,`🏆 Completo: ${nuevos.length} partidos nuevos importados`]);
-      cargarTemporadasYFixture(compActiva);
-      addToast({msg:`✅ ${nuevos.length} partidos de ${cfg.nombre}`,type:'ok'});
-    } catch(e) { setImportLog(l=>[...l,`❌ ${e.message}`]); addToast({msg:'Error: '+e.message,type:'err'}); }
-    setImportando(false);
-  }
-
-  // ── Sincronizar resultados automáticamente desde la API ──────────────────
-  // Trae el fixture actualizado, detecta los partidos que terminaron y
-  // carga resultados + calcula puntos de todos los usuarios automáticamente.
-  const [sincronizando, setSincronizando] = useState(false);
-  const [sincrLog,      setSincrLog]      = useState([]);
-
-  async function adminSincronizarResultados() {
-    const comp = competencias.find(c=>c.id===compActiva);
-    if (!comp || !tempActiva || !API_COMPS[comp.slug]) {
-      addToast({msg:'Seleccioná competencia y temporada primero',type:'err'}); return;
-    }
-    setSincronizando(true); setSincrLog(['🔄 Consultando api-football...']);
-    try {
-      const eventos = await fetchFixtureUnificado(comp.slug);
-      const terminados = eventos.filter(e => e.estado === 'finalizado' && e.goles_local !== null && e.goles_visitante !== null);
-      setSincrLog(l=>[...l, `📡 ${eventos.length} partidos en la API · ${terminados.length} finalizados`]);
-
-      // Traemos los partidos en DB que NO están finalizados todavía
-      const { data: enDB } = await sb.from('prode_partidos')
-        .select('id,api_id,estado,goles_local,goles_visitante')
-        .eq('temporada_id', tempActiva)
-        .neq('estado','finalizado');
-
-      if (!enDB || !enDB.length) { setSincrLog(l=>[...l,'✅ No hay partidos pendientes de actualizar']); setSincronizando(false); return; }
-
-      const dbMap = {};
-      enDB.forEach(p => { if(p.api_id) dbMap[p.api_id] = p; });
-
-      let actualizados = 0, puntosCalculados = 0;
-      for (const ev of terminados) {
-        const dbP = dbMap[ev.api_id];
-        if (!dbP) continue; // no está en esta temporada
-        // Actualizar resultado
-        await sb.from('prode_partidos').update({
-          goles_local: ev.goles_local,
-          goles_visitante: ev.goles_visitante,
-          estado: 'finalizado',
-          picks_cerrados: true,
-        }).eq('id', dbP.id);
-        actualizados++;
-        // Calcular puntos para todos los usuarios
-        try {
-          const { data: calc } = await sb.rpc('calcular_puntos_partido', { p_partido_id: dbP.id });
-          puntosCalculados += (calc || 0);
-        } catch(e) { /* si la función RPC no existe, seguimos igual */ }
-        setSincrLog(l=>[...l, `⚽ Actualizado: ${ev.api_id} → ${ev.goles_local}-${ev.goles_visitante}`]);
-      }
-
-      setSincrLog(l=>[...l, `🏆 Listo: ${actualizados} resultados actualizados · ${puntosCalculados} picks calculados`]);
-      addToast({msg:`✅ Sincronizado: ${actualizados} partidos`, type:'ok'});
-      if (tempActiva) { cargarPartidos(tempActiva); cargarRanking(tempActiva); }
-    } catch(e) {
-      setSincrLog(l=>[...l, `❌ ${e.message}`]);
-      addToast({msg:'Error sincronizando: '+e.message, type:'err'});
-    }
-    setSincronizando(false);
-  }
-
-  // ── Fallback IA: Claude busca el fixture si la API falla ─────────────────
-  const [buscandoIA, setBuscandoIA] = useState(false);
-
-  async function buscarFixtureConIA() {
-    const comp = competencias.find(c=>c.id===compActiva);
-    if (!comp) { addToast({msg:'Seleccioná competencia primero',type:'err'}); return; }
-    if (!window.CLAUDE_PROXY) { addToast({msg:'Proxy Claude no configurado',type:'err'}); return; }
-    setBuscandoIA(true);
-    addToast({msg:'🤖 Claude está buscando el fixture...', type:'ok'});
-    try {
-      const prompt = `Buscá en la web el fixture completo de ${comp.nombre} 2026 en Argentina.
-Devolvé SOLO un JSON válido con este formato exacto, sin texto adicional ni markdown:
-{"partidos":[{"fecha":"2026-01-25T20:00:00-03:00","local":"Nombre equipo","visitante":"Nombre equipo","jornada":1,"fase":"grupos","zona":"Zona A"}]}
-Incluí todos los partidos que encuentres. Fechas en formato ISO 8601 con zona horaria Argentina (-03:00).`;
-
-      const resp = await fetch(window.CLAUDE_PROXY, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({
-          model:'claude-sonnet-4-20250514',
-          max_tokens:4000,
-          tools:[{type:'web_search_20250305',name:'web_search'}],
-          messages:[{role:'user',content:prompt}]
-        })
-      });
-      if (!resp.ok) throw new Error('Claude proxy HTTP ' + resp.status);
-      const data = await resp.json();
-      // Extraer el texto de la respuesta
-      const textos = (data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-      // Parsear JSON
-      const match = textos.match(/\{[\s\S]*"partidos"[\s\S]*\}/);
-      if (!match) throw new Error('Claude no devolvió JSON válido — intentá de nuevo');
-      const parsed = JSON.parse(match[0]);
-      if (!parsed.partidos || !parsed.partidos.length) throw new Error('Claude no encontró partidos');
-
-      // Crear temporada e insertar
-      const nombre = comp.nombre + ' 2026';
-      const { data: nt, error: et } = await sb.from('prode_temporadas').insert({
-        competencia_id: compActiva, nombre, activa:true,
-        fecha_inicio: parsed.partidos[0]?.fecha||null,
-        fecha_fin: parsed.partidos[parsed.partidos.length-1]?.fecha||null,
-      }).select().single();
-      if (et) throw new Error(et.message);
-
-      const rows = parsed.partidos.map(p=>({
-        temporada_id: nt.id, competencia_id: compActiva,
-        fecha: p.fecha, local: p.local, visitante: p.visitante,
-        jornada: p.jornada||null, fase: p.fase||'grupos', zona: p.zona||null,
-        estado:'programado', picks_cerrados:false,
-      }));
-      for (let i=0;i<rows.length;i+=50)
-        await sb.from('prode_partidos').insert(rows.slice(i,i+50));
-
-      addToast({msg:`🤖 IA cargó ${rows.length} partidos de ${nombre}`, type:'ok'});
-      cargarTemporadasYFixture(compActiva);
-    } catch(e) {
-      addToast({msg:'IA: '+e.message, type:'err'});
-    }
-    setBuscandoIA(false);
-  }
-
-  // ── Helpers ──
-  const compObj    = competencias.find(c=>c.id===compActiva);
-  const tempObj    = temporadas.find(t=>t.id===tempActiva);
-  const pts_exacto = parseInt(config.pts_exacto||'3');
-  const fases      = ['grupos','32avos','16avos','8vos','cuartos','semis','final'];
-  const FASE_LABEL = { grupos:'Grupos','32avos':'32avos','16avos':'16avos','8vos':'8vos de final',cuartos:'Cuartos',semis:'Semis',final:'FINAL' };
-  const FASE_BONUS = { grupos:1,'32avos':1,'16avos':1,'8vos':1,cuartos:parseInt(config.bonus_cuartos||2),semis:parseInt(config.bonus_semis||3),final:parseInt(config.bonus_final||4) };
-  const porFase = {};
-  partidos.forEach(p=>{ const f=p.fase||'grupos'; if(!porFase[f])porFase[f]=[]; porFase[f].push(p); });
-  const equiposComp = compObj ? (EQUIPOS_CONOCIDOS[compObj.slug] || []) : [];
-  const esFav = (eq) => favEquipos.some(f => f.toLowerCase() === eq.toLowerCase());
-  const equiposFiltrados = equiposComp.filter(eq => eq.toLowerCase().includes(buscandoEq.toLowerCase()));
-
-  if (cargando) return (
-    <div style={{textAlign:'center',padding:40,color:'var(--tx2)'}}>
-      <div style={{fontSize:32,marginBottom:8}}>🏆</div>
-      <div style={{fontSize:13}}>Cargando el Prode...</div>
-    </div>
-  );
-
-  const accentColor = compObj?.color || '#B7770D';
-
-  // Tabs del menú horizontal principal
-  const MENU_TABS = [
-    { id:'pronosticos', l:'🔮 Pronósticos',   sub:'Analizá los partidos y elegí el resultado más probable.' },
-    { id:'predicciones',l:'🎯 Predicciones',  sub:'Predecí el marcador exacto y sumá puntos.' },
-    { id:'jugagana',    l:'🎮 Jugá y Ganá',   sub:'Desafíos especiales con premios para la comunidad.' },
-    { id:'aciertos',    l:'✅ Aciertos',       sub:'Tu historial de predicciones y estadísticas.' },
-    { id:'quiniela',    l:'📋 Quiniela Dep.',  sub:'Armá tu quiniela deportiva semanal.' },
-    { id:'desafio',     l:'⚡ Desafío Dep.',   sub:'Desafíos especiales por competencia.' },
-    ...(isAdmin ? [{ id:'admin', l:'⚙️ Admin', sub:'Panel de administración.' }] : [])
+  // ── Competencias ────────────────────────────────────────
+  const COMPS = [
+    { id:'liga-pro',       label:'Liga Pro · Apertura', emoji:'⚽' },
+    { id:'clausura',       label:'Liga Pro · Clausura',  emoji:'⚽' },
+    { id:'libertadores',   label:'Libertadores',         emoji:'🌎' },
+    { id:'copa-argentina', label:'Copa Argentina',       emoji:'🏆' },
+    { id:'sudamericana',   label:'Sudamericana',         emoji:'🟠' },
+    { id:'mundial',        label:'Copa del Mundo',       emoji:'🌍' },
   ];
-  const tabActivo = MENU_TABS.find(t => t.id === tab) || MENU_TABS[0];
 
-  return (
-    <div>
+  // ── Puntos por ronda ────────────────────────────────────
+  const BRACKET_PTS = { r0:1,r1:1,r2:1,r3:1,r4:1,r5:1,r6:1,r7:1, qL1:2,qL2:2,qR1:2,qR2:2, sL:4,sR:4, fin:8 };
+  const FIXTURE_PTS = 3;
 
-      {/* ── 1. TARJETA CABECERA ── */}
-      <div style={{background:'linear-gradient(135deg,#B7770D,#F59E0B)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:10,display:'flex',alignItems:'center',gap:10,color:'white'}}>
-        <span style={{fontSize:24,flexShrink:0}}>🏆</span>
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,lineHeight:1.2}}>La Tribu Predice</div>
-          <div style={{fontSize:11,opacity:.85}}>Predicciones, pronósticos y desafíos · 100% gratis</div>
+  // ── FIXTURE DATA ─────────────────────────────────────────
+  const LP = [
+    {id:'a01',f:'Fecha 1',d:'25-ene',h:'Boca Juniors',v:'Dep. Riestra',z:'Zona A'},{id:'a02',f:'Fecha 1',d:'25-ene',h:'Independiente',v:'Estudiantes LP',z:'Zona A'},{id:'a03',f:'Fecha 1',d:'25-ene',h:'Talleres',v:"Newell's OB",z:'Zona A'},{id:'a04',f:'Fecha 1',d:'25-ene',h:'Instituto',v:'Vélez',z:'Zona A'},{id:'a05',f:'Fecha 1',d:'25-ene',h:'Unión',v:'Platense',z:'Zona A'},{id:'a06',f:'Fecha 1',d:'25-ene',h:'San Lorenzo',v:'Lanús',z:'Zona A'},{id:'a07',f:'Fecha 1',d:'25-ene',h:'Central Córdoba',v:'Gimnasia Mza',z:'Zona A'},{id:'a08',f:'Fecha 1',d:'25-ene',h:'Barracas Central',v:'River Plate',z:'Zona B'},{id:'a09',f:'Fecha 1',d:'25-ene',h:'Gimnasia LP',v:'Racing Club',z:'Zona B'},{id:'a10',f:'Fecha 1',d:'25-ene',h:'Rosario Central',v:'Belgrano',z:'Zona B'},{id:'a11',f:'Fecha 1',d:'25-ene',h:'Tigre',v:'Estudiantes RC',z:'Zona B'},{id:'a12',f:'Fecha 1',d:'25-ene',h:'Argentinos Jrs',v:'Sarmiento',z:'Zona B'},{id:'a13',f:'Fecha 1',d:'25-ene',h:'Banfield',v:'Huracán',z:'Zona B'},{id:'a14',f:'Fecha 1',d:'25-ene',h:'Ind. Rivadavia',v:'Atlético Tucumán',z:'Zona B'},{id:'a15',f:'Fecha 1',d:'25-ene',h:'Aldosivi',v:'Defensa y Justicia',z:'Interzonal'},
+    {id:'b01',f:'Fecha 2',d:'28-ene',h:'Gimnasia Mza',v:'San Lorenzo',z:'Zona A'},{id:'b02',f:'Fecha 2',d:'28-ene',h:'Lanús',v:'Unión',z:'Zona A'},{id:'b03',f:'Fecha 2',d:'28-ene',h:'Platense',v:'Instituto',z:'Zona A'},{id:'b04',f:'Fecha 2',d:'28-ene',h:'Vélez',v:'Talleres',z:'Zona A'},{id:'b05',f:'Fecha 2',d:'28-ene',"h":"Newell's OB",v:'Independiente',z:'Zona A'},{id:'b06',f:'Fecha 2',d:'28-ene',h:'Estudiantes LP',v:'Boca Juniors',z:'Zona A'},{id:'b07',f:'Fecha 2',d:'28-ene',h:'Dep. Riestra',v:'Defensa y Justicia',z:'Zona A'},{id:'b08',f:'Fecha 2',d:'28-ene',h:'Huracán',v:'Ind. Rivadavia',z:'Zona B'},{id:'b09',f:'Fecha 2',d:'28-ene',h:'Sarmiento',v:'Banfield',z:'Zona B'},{id:'b10',f:'Fecha 2',d:'28-ene',h:'Estudiantes RC',v:'Argentinos Jrs',z:'Zona B'},{id:'b11',f:'Fecha 2',d:'28-ene',h:'Belgrano',v:'Tigre',z:'Zona B'},{id:'b12',f:'Fecha 2',d:'28-ene',h:'Racing Club',v:'Rosario Central',z:'Zona B'},{id:'b13',f:'Fecha 2',d:'28-ene',h:'River Plate',v:'Gimnasia LP',z:'Zona B'},{id:'b14',f:'Fecha 2',d:'28-ene',h:'Aldosivi',v:'Barracas Central',z:'Zona B'},{id:'b15',f:'Fecha 2',d:'28-ene',h:'Atlético Tucumán',v:'Central Córdoba',z:'Interzonal'},
+    {id:'c01',f:'Fecha 3',d:'1-feb',h:'Defensa y Justicia',v:'Estudiantes LP',z:'Zona A'},{id:'c02',f:'Fecha 3',d:'1-feb',h:'Boca Juniors',v:"Newell's OB",z:'Zona A'},{id:'c03',f:'Fecha 3',d:'1-feb',h:'Independiente',v:'Vélez',z:'Zona A'},{id:'c04',f:'Fecha 3',d:'1-feb',h:'Talleres',v:'Platense',z:'Zona A'},{id:'c05',f:'Fecha 3',d:'1-feb',h:'Instituto',v:'Lanús',z:'Zona A'},{id:'c06',f:'Fecha 3',d:'1-feb',h:'Unión',v:'Gimnasia Mza',z:'Zona A'},{id:'c07',f:'Fecha 3',d:'1-feb',h:'San Lorenzo',v:'Central Córdoba',z:'Zona A'},{id:'c08',f:'Fecha 3',d:'1-feb',h:'Gimnasia LP',v:'Aldosivi',z:'Zona B'},{id:'c09',f:'Fecha 3',d:'1-feb',h:'Rosario Central',v:'River Plate',z:'Zona B'},{id:'c10',f:'Fecha 3',d:'1-feb',h:'Tigre',v:'Racing Club',z:'Zona B'},{id:'c11',f:'Fecha 3',d:'1-feb',h:'Argentinos Jrs',v:'Belgrano',z:'Zona B'},{id:'c12',f:'Fecha 3',d:'1-feb',h:'Banfield',v:'Estudiantes RC',z:'Zona B'},{id:'c13',f:'Fecha 3',d:'1-feb',h:'Ind. Rivadavia',v:'Sarmiento',z:'Zona B'},{id:'c14',f:'Fecha 3',d:'1-feb',h:'Atlético Tucumán',v:'Huracán',z:'Zona B'},{id:'c15',f:'Fecha 3',d:'1-feb',h:'Barracas Central',v:'Dep. Riestra',z:'Interzonal'},
+    {id:'d01',f:'Fecha 4',d:'8-feb',h:'Central Córdoba',v:'Unión',z:'Zona A'},{id:'d02',f:'Fecha 4',d:'8-feb',h:'Gimnasia Mza',v:'Instituto',z:'Zona A'},{id:'d03',f:'Fecha 4',d:'8-feb',h:'Lanús',v:'Talleres',z:'Zona A'},{id:'d04',f:'Fecha 4',d:'8-feb',h:'Platense',v:'Independiente',z:'Zona A'},{id:'d05',f:'Fecha 4',d:'8-feb',h:'Vélez',v:'Boca Juniors',z:'Zona A'},{id:'d06',f:'Fecha 4',d:'8-feb',"h":"Newell's OB",v:'Defensa y Justicia',z:'Zona A'},{id:'d07',f:'Fecha 4',d:'8-feb',h:'Estudiantes LP',v:'Dep. Riestra',z:'Zona A'},{id:'d08',f:'Fecha 4',d:'8-feb',h:'Sarmiento',v:'Atlético Tucumán',z:'Zona B'},{id:'d09',f:'Fecha 4',d:'8-feb',h:'Estudiantes RC',v:'Ind. Rivadavia',z:'Zona B'},{id:'d10',f:'Fecha 4',d:'8-feb',h:'Belgrano',v:'Banfield',z:'Zona B'},{id:'d11',f:'Fecha 4',d:'8-feb',h:'Racing Club',v:'Argentinos Jrs',z:'Zona B'},{id:'d12',f:'Fecha 4',d:'8-feb',h:'River Plate',v:'Tigre',z:'Zona B'},{id:'d13',f:'Fecha 4',d:'8-feb',h:'Aldosivi',v:'Rosario Central',z:'Zona B'},{id:'d14',f:'Fecha 4',d:'8-feb',h:'Barracas Central',v:'Gimnasia LP',z:'Zona B'},{id:'d15',f:'Fecha 4',d:'8-feb',h:'Huracán',v:'San Lorenzo',z:'Interzonal'},
+    {id:'e01',f:'Fecha 5',d:'15-feb',h:'Dep. Riestra',v:"Newell's OB",z:'Zona A'},{id:'e02',f:'Fecha 5',d:'15-feb',h:'Defensa y Justicia',v:'Vélez',z:'Zona A'},{id:'e03',f:'Fecha 5',d:'15-feb',h:'Boca Juniors',v:'Platense',z:'Zona A'},{id:'e04',f:'Fecha 5',d:'15-feb',h:'Independiente',v:'Lanús',z:'Zona A'},{id:'e05',f:'Fecha 5',d:'15-feb',h:'Talleres',v:'Gimnasia Mza',z:'Zona A'},{id:'e06',f:'Fecha 5',d:'15-feb',h:'Instituto',v:'Central Córdoba',z:'Zona A'},{id:'e07',f:'Fecha 5',d:'15-feb',h:'Unión',v:'San Lorenzo',z:'Zona A'},{id:'e08',f:'Fecha 5',d:'15-feb',h:'Rosario Central',v:'Barracas Central',z:'Zona B'},{id:'e09',f:'Fecha 5',d:'15-feb',h:'Tigre',v:'Aldosivi',z:'Zona B'},{id:'e10',f:'Fecha 5',d:'15-feb',h:'Argentinos Jrs',v:'River Plate',z:'Zona B'},{id:'e11',f:'Fecha 5',d:'15-feb',h:'Banfield',v:'Racing Club',z:'Zona B'},{id:'e12',f:'Fecha 5',d:'15-feb',h:'Ind. Rivadavia',v:'Belgrano',z:'Zona B'},{id:'e13',f:'Fecha 5',d:'15-feb',h:'Atlético Tucumán',v:'Estudiantes RC',z:'Zona B'},{id:'e14',f:'Fecha 5',d:'15-feb',h:'Huracán',v:'Sarmiento',z:'Zona B'},{id:'e15',f:'Fecha 5',d:'15-feb',h:'Gimnasia LP',v:'Estudiantes LP',z:'Interzonal'},
+    {id:'f01',f:'Fecha 6',d:'22-feb',h:'Vélez',v:'River Plate',z:'Interzonal'},{id:'f02',f:'Fecha 6',d:'22-feb',h:'Platense',v:'Barracas Central',z:'Interzonal'},{id:'f03',f:'Fecha 6',d:'22-feb',h:'Rosario Central',v:'Talleres',z:'Interzonal'},{id:'f04',f:'Fecha 6',d:'22-feb',h:'Estudiantes LP',v:'Sarmiento',z:'Interzonal'},{id:'f05',f:'Fecha 6',d:'22-feb',h:'Defensa y Justicia',v:'Belgrano',z:'Interzonal'},{id:'f06',f:'Fecha 6',d:'22-feb',h:'Argentinos Jrs',v:'Lanús',z:'Interzonal'},{id:'f07',f:'Fecha 6',d:'22-feb',h:'Boca Juniors',v:'Racing Club',z:'Interzonal'},{id:'f08',f:'Fecha 6',d:'22-feb',h:'Ind. Rivadavia',v:'Independiente',z:'Interzonal'},{id:'f09',f:'Fecha 6',d:'22-feb',h:'Unión',v:'Aldosivi',z:'Interzonal'},{id:'f10',f:'Fecha 6',d:'22-feb',h:'Instituto',v:'Atlético Tucumán',z:'Interzonal'},{id:'f11',f:'Fecha 6',d:'22-feb',h:'San Lorenzo',v:'Estudiantes RC',z:'Interzonal'},{id:'f12',f:'Fecha 6',d:'22-feb',h:'Gimnasia Mza',v:'Gimnasia LP',z:'Interzonal'},{id:'f13',f:'Fecha 6',d:'22-feb',h:'Central Córdoba',v:'Tigre',z:'Interzonal'},{id:'f14',f:'Fecha 6',d:'22-feb',h:'Dep. Riestra',v:'Huracán',z:'Interzonal'},{id:'f15',f:'Fecha 6',d:'22-feb',h:'Banfield',v:"Newell's OB",z:'Interzonal'},
+    {id:'g01',f:'Fecha 7',d:'25-feb',h:'San Lorenzo',v:'Instituto',z:'Zona A'},{id:'g02',f:'Fecha 7',d:'25-feb',h:'Central Córdoba',v:'Talleres',z:'Zona A'},{id:'g03',f:'Fecha 7',d:'25-feb',h:'Gimnasia Mza',v:'Independiente',z:'Zona A'},{id:'g04',f:'Fecha 7',d:'25-feb',h:'Lanús',v:'Boca Juniors',z:'Zona A'},{id:'g05',f:'Fecha 7',d:'25-feb',h:'Platense',v:'Defensa y Justicia',z:'Zona A'},{id:'g06',f:'Fecha 7',d:'25-feb',h:'Vélez',v:'Dep. Riestra',z:'Zona A'},{id:'g07',f:'Fecha 7',d:'25-feb',"h":"Newell's OB",v:'Estudiantes LP',z:'Zona A'},{id:'g08',f:'Fecha 7',d:'25-feb',h:'Estudiantes RC',v:'Huracán',z:'Zona B'},{id:'g09',f:'Fecha 7',d:'25-feb',h:'Belgrano',v:'Atlético Tucumán',z:'Zona B'},{id:'g10',f:'Fecha 7',d:'25-feb',h:'Racing Club',v:'Ind. Rivadavia',z:'Zona B'},{id:'g11',f:'Fecha 7',d:'25-feb',h:'River Plate',v:'Banfield',z:'Zona B'},{id:'g12',f:'Fecha 7',d:'25-feb',h:'Aldosivi',v:'Argentinos Jrs',z:'Zona B'},{id:'g13',f:'Fecha 7',d:'25-feb',h:'Barracas Central',v:'Tigre',z:'Zona B'},{id:'g14',f:'Fecha 7',d:'25-feb',h:'Gimnasia LP',v:'Rosario Central',z:'Zona B'},{id:'g15',f:'Fecha 7',d:'25-feb',h:'Sarmiento',v:'Unión',z:'Interzonal'},
+    {id:'h01',f:'Fecha 8',d:'1-mar',h:'Estudiantes LP',v:'Vélez',z:'Zona A'},{id:'h02',f:'Fecha 8',d:'1-mar',h:'Dep. Riestra',v:'Platense',z:'Zona A'},{id:'h03',f:'Fecha 8',d:'1-mar',h:'Defensa y Justicia',v:'Lanús',z:'Zona A'},{id:'h04',f:'Fecha 8',d:'1-mar',h:'Boca Juniors',v:'Gimnasia Mza',z:'Zona A'},{id:'h05',f:'Fecha 8',d:'1-mar',h:'Independiente',v:'Central Córdoba',z:'Zona A'},{id:'h06',f:'Fecha 8',d:'1-mar',h:'Talleres',v:'San Lorenzo',z:'Zona A'},{id:'h07',f:'Fecha 8',d:'1-mar',h:'Instituto',v:'Unión',z:'Zona A'},{id:'h08',f:'Fecha 8',d:'1-mar',h:'Tigre',v:'Gimnasia LP',z:'Zona B'},{id:'h09',f:'Fecha 8',d:'1-mar',h:'Argentinos Jrs',v:'Barracas Central',z:'Zona B'},{id:'h10',f:'Fecha 8',d:'1-mar',h:'Banfield',v:'Aldosivi',z:'Zona B'},{id:'h11',f:'Fecha 8',d:'1-mar',h:'Ind. Rivadavia',v:'River Plate',z:'Zona B'},{id:'h12',f:'Fecha 8',d:'1-mar',h:'Atlético Tucumán',v:'Racing Club',z:'Zona B'},{id:'h13',f:'Fecha 8',d:'1-mar',h:'Huracán',v:'Belgrano',z:'Zona B'},{id:'h14',f:'Fecha 8',d:'1-mar',h:'Sarmiento',v:'Estudiantes RC',z:'Zona B'},{id:'h15',f:'Fecha 8',d:'1-mar',"h":"Newell's OB",v:'Rosario Central',z:'Interzonal'},
+    {id:'i01',f:'Fecha 9',d:'8-mar',h:'Unión',v:'Talleres',z:'Zona A'},{id:'i02',f:'Fecha 9',d:'8-mar',h:'San Lorenzo',v:'Independiente',z:'Zona A'},{id:'i03',f:'Fecha 9',d:'8-mar',h:'Central Córdoba',v:'Boca Juniors',z:'Zona A'},{id:'i04',f:'Fecha 9',d:'8-mar',h:'Gimnasia Mza',v:'Defensa y Justicia',z:'Zona A'},{id:'i05',f:'Fecha 9',d:'8-mar',h:'Lanús',v:'Dep. Riestra',z:'Zona A'},{id:'i06',f:'Fecha 9',d:'8-mar',h:'Platense',v:'Estudiantes LP',z:'Zona A'},{id:'i07',f:'Fecha 9',d:'8-mar',h:'Vélez',"v":"Newell's OB",z:'Zona A'},{id:'i08',f:'Fecha 9',d:'8-mar',h:'Belgrano',v:'Sarmiento',z:'Zona B'},{id:'i09',f:'Fecha 9',d:'8-mar',h:'Racing Club',v:'Huracán',z:'Zona B'},{id:'i10',f:'Fecha 9',d:'8-mar',h:'River Plate',v:'Atlético Tucumán',z:'Zona B'},{id:'i11',f:'Fecha 9',d:'8-mar',h:'Aldosivi',v:'Ind. Rivadavia',z:'Zona B'},{id:'i12',f:'Fecha 9',d:'8-mar',h:'Barracas Central',v:'Banfield',z:'Zona B'},{id:'i13',f:'Fecha 9',d:'8-mar',h:'Gimnasia LP',v:'Argentinos Jrs',z:'Zona B'},{id:'i14',f:'Fecha 9',d:'8-mar',h:'Rosario Central',v:'Tigre',z:'Zona B'},{id:'i15',f:'Fecha 9',d:'8-mar',h:'Estudiantes RC',v:'Instituto',z:'Interzonal'},
+    {id:'j01',f:'Fecha 10',d:'11-mar',h:"Newell's OB",v:'Platense',z:'Zona A'},{id:'j02',f:'Fecha 10',d:'11-mar',h:'Estudiantes LP',v:'Lanús',z:'Zona A'},{id:'j03',f:'Fecha 10',d:'11-mar',h:'Dep. Riestra',v:'Gimnasia Mza',z:'Zona A'},{id:'j04',f:'Fecha 10',d:'11-mar',h:'Defensa y Justicia',v:'Central Córdoba',z:'Zona A'},{id:'j05',f:'Fecha 10',d:'11-mar',h:'Boca Juniors',v:'San Lorenzo',z:'Zona A'},{id:'j06',f:'Fecha 10',d:'11-mar',h:'Independiente',v:'Unión',z:'Zona A'},{id:'j07',f:'Fecha 10',d:'11-mar',h:'Talleres',v:'Instituto',z:'Zona A'},{id:'j08',f:'Fecha 10',d:'11-mar',h:'Argentinos Jrs',v:'Rosario Central',z:'Zona B'},{id:'j09',f:'Fecha 10',d:'11-mar',h:'Banfield',v:'Gimnasia LP',z:'Zona B'},{id:'j10',f:'Fecha 10',d:'11-mar',h:'Ind. Rivadavia',v:'Barracas Central',z:'Zona B'},{id:'j11',f:'Fecha 10',d:'11-mar',h:'Atlético Tucumán',v:'Aldosivi',z:'Zona B'},{id:'j12',f:'Fecha 10',d:'11-mar',h:'Huracán',v:'River Plate',z:'Zona B'},{id:'j13',f:'Fecha 10',d:'11-mar',h:'Sarmiento',v:'Racing Club',z:'Zona B'},{id:'j14',f:'Fecha 10',d:'11-mar',h:'Estudiantes RC',v:'Belgrano',z:'Zona B'},{id:'j15',f:'Fecha 10',d:'11-mar',h:'Tigre',v:'Vélez',z:'Interzonal'},
+    {id:'k01',f:'Fecha 11',d:'15-mar',h:'Instituto',v:'Independiente',z:'Zona A'},{id:'k02',f:'Fecha 11',d:'15-mar',h:'Unión',v:'Boca Juniors',z:'Zona A'},{id:'k03',f:'Fecha 11',d:'15-mar',h:'San Lorenzo',v:'Defensa y Justicia',z:'Zona A'},{id:'k04',f:'Fecha 11',d:'15-mar',h:'Central Córdoba',v:'Dep. Riestra',z:'Zona A'},{id:'k05',f:'Fecha 11',d:'15-mar',h:'Gimnasia Mza',v:'Estudiantes LP',z:'Zona A'},{id:'k06',f:'Fecha 11',d:'15-mar',h:'Lanús',"v":"Newell's OB",z:'Zona A'},{id:'k07',f:'Fecha 11',d:'15-mar',h:'Platense',v:'Vélez',z:'Zona A'},{id:'k08',f:'Fecha 11',d:'15-mar',h:'Racing Club',v:'Estudiantes RC',z:'Zona B'},{id:'k09',f:'Fecha 11',d:'15-mar',h:'River Plate',v:'Sarmiento',z:'Zona B'},{id:'k10',f:'Fecha 11',d:'15-mar',h:'Aldosivi',v:'Huracán',z:'Zona B'},{id:'k11',f:'Fecha 11',d:'15-mar',h:'Barracas Central',v:'Atlético Tucumán',z:'Zona B'},{id:'k12',f:'Fecha 11',d:'15-mar',h:'Gimnasia LP',v:'Ind. Rivadavia',z:'Zona B'},{id:'k13',f:'Fecha 11',d:'15-mar',h:'Rosario Central',v:'Banfield',z:'Zona B'},{id:'k14',f:'Fecha 11',d:'15-mar',h:'Tigre',v:'Argentinos Jrs',z:'Zona B'},{id:'k15',f:'Fecha 11',d:'15-mar',h:'Belgrano',v:'Talleres',z:'Interzonal'},
+    {id:'l01',f:'Fecha 12',d:'22-mar',h:'Vélez',v:'San Lorenzo',z:'Zona A'},{id:'l02',f:'Fecha 12',d:'22-mar',h:'Dep. Riestra',v:'Unión',z:'Zona A'},{id:'l03',f:'Fecha 12',d:'22-mar',h:'Defensa y Justicia',v:'Instituto',z:'Zona A'},{id:'l04',f:'Fecha 12',d:'22-mar',h:'Boca Juniors',v:'Central Córdoba',z:'Zona A'},{id:'l05',f:'Fecha 12',d:'22-mar',h:'Independiente',v:'Gimnasia Mza',z:'Zona A'},{id:'l06',f:'Fecha 12',d:'22-mar',h:'Talleres',v:'Lanús',z:'Zona A'},{id:'l07',f:'Fecha 12',d:'22-mar',"h":"Newell's OB",v:'Platense',z:'Zona A'},{id:'l08',f:'Fecha 12',d:'22-mar',h:'Estudiantes RC',v:'Rosario Central',z:'Zona B'},{id:'l09',f:'Fecha 12',d:'22-mar',h:'Huracán',v:'Barracas Central',z:'Zona B'},{id:'l10',f:'Fecha 12',d:'22-mar',h:'Atlético Tucumán',v:'Gimnasia LP',z:'Zona B'},{id:'l11',f:'Fecha 12',d:'22-mar',h:'Ind. Rivadavia',v:'Tigre',z:'Zona B'},{id:'l12',f:'Fecha 12',d:'22-mar',h:'Sarmiento',v:'Aldosivi',z:'Zona B'},{id:'l13',f:'Fecha 12',d:'22-mar',h:'Banfield',v:'Argentinos Jrs',z:'Zona B'},{id:'l14',f:'Fecha 12',d:'22-mar',h:'Belgrano',v:'River Plate',z:'Zona B'},{id:'l15',f:'Fecha 12',d:'22-mar',h:'Racing Club',v:'Estudiantes LP',z:'Interzonal'},
+    {id:'m01',f:'Fecha 13',d:'29-mar',h:'San Lorenzo',v:'Vélez',z:'Zona A'},{id:'m02',f:'Fecha 13',d:'29-mar',h:'Unión',v:'Defensa y Justicia',z:'Zona A'},{id:'m03',f:'Fecha 13',d:'29-mar',h:'Instituto',v:'Boca Juniors',z:'Zona A'},{id:'m04',f:'Fecha 13',d:'29-mar',h:'Gimnasia Mza',v:'Talleres',z:'Zona A'},{id:'m05',f:'Fecha 13',d:'29-mar',h:'Lanús',v:'Independiente',z:'Zona A'},{id:'m06',f:'Fecha 13',d:'29-mar',h:'Platense',v:'Central Córdoba',z:'Zona A'},{id:'m07',f:'Fecha 13',d:'29-mar',h:'Estudiantes LP',"v":"Newell's OB",z:'Zona A'},{id:'m08',f:'Fecha 13',d:'29-mar',h:'Rosario Central',v:'Estudiantes RC',z:'Zona B'},{id:'m09',f:'Fecha 13',d:'29-mar',h:'Barracas Central',v:'Huracán',z:'Zona B'},{id:'m10',f:'Fecha 13',d:'29-mar',h:'Gimnasia LP',v:'Atlético Tucumán',z:'Zona B'},{id:'m11',f:'Fecha 13',d:'29-mar',h:'Tigre',v:'Ind. Rivadavia',z:'Zona B'},{id:'m12',f:'Fecha 13',d:'29-mar',h:'Aldosivi',v:'Sarmiento',z:'Zona B'},{id:'m13',f:'Fecha 13',d:'29-mar',h:'Argentinos Jrs',v:'Banfield',z:'Zona B'},{id:'m14',f:'Fecha 13',d:'29-mar',h:'River Plate',v:'Belgrano',z:'Zona B'},{id:'m15',f:'Fecha 13',d:'29-mar',h:'Dep. Riestra',v:'Racing Club',z:'Interzonal'},
+    {id:'n01',f:'Fecha 14',d:'5-abr',h:'Boca Juniors',v:'Vélez',z:'Zona A'},{id:'n02',f:'Fecha 14',d:'5-abr',"h":"Newell's OB",v:'Gimnasia Mza',z:'Zona A'},{id:'n03',f:'Fecha 14',d:'5-abr',h:'Independiente',v:'Platense',z:'Zona A'},{id:'n04',f:'Fecha 14',d:'5-abr',h:'Talleres',v:'Unión',z:'Zona A'},{id:'n05',f:'Fecha 14',d:'5-abr',h:'Central Córdoba',v:'Lanús',z:'Zona A'},{id:'n06',f:'Fecha 14',d:'5-abr',h:'Defensa y Justicia',v:'San Lorenzo',z:'Zona A'},{id:'n07',f:'Fecha 14',d:'5-abr',h:'Dep. Riestra',v:'Instituto',z:'Zona A'},{id:'n08',f:'Fecha 14',d:'5-abr',h:'Sarmiento',v:'Gimnasia LP',z:'Zona B'},{id:'n09',f:'Fecha 14',d:'5-abr',h:'Ind. Rivadavia',v:'Racing Club',z:'Zona B'},{id:'n10',f:'Fecha 14',d:'5-abr',h:'Atlético Tucumán',v:'Tigre',z:'Zona B'},{id:'n11',f:'Fecha 14',d:'5-abr',h:'Huracán',v:'Argentinos Jrs',z:'Zona B'},{id:'n12',f:'Fecha 14',d:'5-abr',h:'Belgrano',v:'Barracas Central',z:'Zona B'},{id:'n13',f:'Fecha 14',d:'5-abr',h:'Banfield',v:'River Plate',z:'Zona B'},{id:'n14',f:'Fecha 14',d:'5-abr',h:'Rosario Central',v:'Aldosivi',z:'Zona B'},{id:'n15',f:'Fecha 14',d:'5-abr',h:'Estudiantes LP',v:'Estudiantes RC',z:'Interzonal'},
+  ];
+
+  const LIB = [
+    {id:'la1',f:'Fecha 1',d:'7-abr',h:'Estudiantes LP',v:'Cusco FC',z:'Grupo A'},{id:'la2',f:'Fecha 1',d:'8-abr',h:'Flamengo',v:'Ind. Medellín',z:'Grupo A'},{id:'la3',f:'Fecha 2',d:'14-abr',h:'Cusco FC',v:'Estudiantes LP',z:'Grupo A'},{id:'la4',f:'Fecha 2',d:'15-abr',h:'Flamengo',v:'Estudiantes LP',z:'Grupo A'},{id:'la5',f:'Fecha 3',d:'29-abr',h:'Estudiantes LP',v:'Ind. Medellín',z:'Grupo A'},{id:'la6',f:'Fecha 3',d:'29-abr',h:'Flamengo',v:'Cusco FC',z:'Grupo A'},{id:'la7',f:'Fecha 4',d:'6-may',h:'Ind. Medellín',v:'Estudiantes LP',z:'Grupo A'},{id:'la8',f:'Fecha 5',d:'20-may',h:'Estudiantes LP',v:'Flamengo',z:'Grupo A'},{id:'la9',f:'Fecha 6',d:'27-may',h:'Estudiantes LP',v:'Flamengo',z:'Grupo A'},
+    {id:'ld1',f:'Fecha 1',d:'7-abr',h:'Univ. Católica',v:'Boca Juniors',z:'Grupo D'},{id:'ld2',f:'Fecha 2',d:'14-abr',h:'Cruzeiro',v:'Boca Juniors',z:'Grupo D'},{id:'ld3',f:'Fecha 3',d:'28-abr',h:'Boca Juniors',v:'Univ. Católica',z:'Grupo D'},{id:'ld4',f:'Fecha 4',d:'5-may',h:'Barcelona (Gye)',v:'Boca Juniors',z:'Grupo D'},{id:'ld5',f:'Fecha 5',d:'19-may',h:'Boca Juniors',v:'Barcelona (Gye)',z:'Grupo D'},{id:'ld6',f:'Fecha 6',d:'26-may',h:'Boca Juniors',v:'Cruzeiro',z:'Grupo D'},
+    {id:'le1',f:'Fecha 1',d:'7-abr',h:'Platense',v:'Corinthians',z:'Grupo E'},{id:'le2',f:'Fecha 1',d:'8-abr',h:'Peñarol',v:'Santa Fe',z:'Grupo E'},{id:'le3',f:'Fecha 2',d:'15-abr',h:'Peñarol',v:'Platense',z:'Grupo E'},{id:'le4',f:'Fecha 3',d:'29-abr',h:'Platense',v:'Peñarol',z:'Grupo E'},{id:'le5',f:'Fecha 4',d:'6-may',h:'Corinthians',v:'Platense',z:'Grupo E'},{id:'le6',f:'Fecha 5',d:'20-may',h:'Platense',v:'Santa Fe',z:'Grupo E'},
+    {id:'lg1',f:'Fecha 1',d:'8-abr',h:'Liga de Quito',v:'Lanús',z:'Grupo G'},{id:'lg2',f:'Fecha 2',d:'15-abr',h:'Always Ready',v:'Lanús',z:'Grupo G'},{id:'lg3',f:'Fecha 3',d:'29-abr',h:'Lanús',v:'Mirassol',z:'Grupo G'},{id:'lg4',f:'Fecha 4',d:'6-may',h:'Lanús',v:'Liga de Quito',z:'Grupo G'},{id:'lg5',f:'Fecha 5',d:'20-may',h:'Mirassol',v:'Lanús',z:'Grupo G'},{id:'lg6',f:'Fecha 6',d:'27-may',h:'Lanús',v:'Always Ready',z:'Grupo G'},
+    {id:'lh1',f:'Fecha 1',d:'7-abr',h:'Libertad',v:'Rosario Central',z:'Grupo H'},{id:'lh2',f:'Fecha 2',d:'14-abr',h:'U.C.V. FC',v:'Rosario Central',z:'Grupo H'},{id:'lh3',f:'Fecha 3',d:'28-abr',h:'Rosario Central',v:'Ind. del Valle',z:'Grupo H'},{id:'lh4',f:'Fecha 4',d:'5-may',h:'Rosario Central',v:'Libertad',z:'Grupo H'},{id:'lh5',f:'Fecha 5',d:'19-may',h:'Ind. del Valle',v:'Rosario Central',z:'Grupo H'},{id:'lh6',f:'Fecha 6',d:'26-may',h:'Rosario Central',v:'U.C.V. FC',z:'Grupo H'},
+  ];
+
+  const WC = [
+    {id:'wc1',f:'Grupo J · Fase de grupos',d:'16-jun',h:'Argentina',v:'Argelia',z:'Kansas City · 22:00hs'},
+    {id:'wc2',f:'Grupo J · Fase de grupos',d:'22-jun',h:'Argentina',v:'Austria',z:'Dallas · 14:00hs'},
+    {id:'wc3',f:'Grupo J · Fase de grupos',d:'27-jun',h:'Jordania',v:'Argentina',z:'Dallas · 23:00hs'},
+    {id:'wc4',f:'16vos de final',d:'~1-jul',h:'1° Grupo J',v:'2° Grupo H',z:'Si Argentina clasifica 1°'},
+    {id:'wc5',f:'Octavos de final',d:'~8-jul',h:'TBD',v:'TBD',z:'Fase eliminatoria'},
+    {id:'wc6',f:'Cuartos de final',d:'~12-jul',h:'TBD',v:'TBD',z:'Fase eliminatoria'},
+    {id:'wc7',f:'Semifinal',d:'~15-jul',h:'TBD',v:'TBD',z:'Fase eliminatoria'},
+    {id:'wc8',f:'Gran Final',d:'19-jul',h:'TBD',v:'TBD',z:'MetLife Stadium, Nueva Jersey'},
+  ];
+
+  const CA = [
+    {id:'ca1',f:'Ronda de 32',d:'abr-may',h:'Equipos Liga Pro',v:'Equipos del interior',z:'Fases en curso'},
+    {id:'ca2',f:'Octavos de final',d:'jun',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'ca3',f:'Cuartos de final',d:'ago-sep',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'ca4',f:'Semifinal',d:'oct-nov',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'ca5',f:'Gran Final',d:'dic',h:'TBD',v:'TBD',z:'A confirmar'},
+  ];
+
+  const SUD = [
+    {id:'su1',f:'Fase de grupos',d:'abr-may',h:'Equipos ARG',v:'Equipos SUL',z:'A definir'},
+    {id:'su2',f:'Octavos',d:'jun',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'su3',f:'Cuartos',d:'ago',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'su4',f:'Semifinal',d:'sep-oct',h:'TBD',v:'TBD',z:'A confirmar'},
+    {id:'su5',f:'Gran Final',d:'nov',h:'TBD',v:'TBD',z:'A confirmar'},
+  ];
+
+const LC = [
+    {id:'cl_a01',f:'Fecha 1',d:'26-jul',h:'Dep. Riestra',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_a02',f:'Fecha 1',d:'26-jul',h:'Estudiantes LP',v:'Independiente',z:'Zona A'},
+    {id:'cl_a04',f:'Fecha 1',d:'26-jul',h:'Vélez',v:'Instituto',z:'Zona A'},
+    {id:'cl_a05',f:'Fecha 1',d:'26-jul',h:'Platense',v:'Unión',z:'Zona A'},
+    {id:'cl_a06',f:'Fecha 1',d:'26-jul',h:'Lanús',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_a07',f:'Fecha 1',d:'26-jul',h:'Gimnasia Mza',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_a08',f:'Fecha 1',d:'26-jul',h:'River Plate',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_a09',f:'Fecha 1',d:'26-jul',h:'Racing Club',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_a10',f:'Fecha 1',d:'26-jul',h:'Belgrano',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_a11',f:'Fecha 1',d:'26-jul',h:'Estudiantes RC',v:'Tigre',z:'Zona B'},
+    {id:'cl_a12',f:'Fecha 1',d:'26-jul',h:'Sarmiento',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_a13',f:'Fecha 1',d:'26-jul',h:'Huracán',v:'Banfield',z:'Zona B'},
+    {id:'cl_a14',f:'Fecha 1',d:'26-jul',h:'Atlético Tucumán',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_a15',f:'Fecha 1',d:'26-jul',h:'Defensa y Justicia',v:'Aldosivi',z:'Interzonal'},
+    {id:'cl_b01',f:'Fecha 2',d:'30-jul',h:'San Lorenzo',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_b02',f:'Fecha 2',d:'30-jul',h:'Unión',v:'Lanús',z:'Zona A'},
+    {id:'cl_b03',f:'Fecha 2',d:'30-jul',h:'Instituto',v:'Platense',z:'Zona A'},
+    {id:'cl_b04',f:'Fecha 2',d:'30-jul',h:'Talleres',v:'Vélez',z:'Zona A'},
+    {id:'cl_b06',f:'Fecha 2',d:'30-jul',h:'Boca Juniors',v:'Estudiantes LP',z:'Zona A'},
+    {id:'cl_b07',f:'Fecha 2',d:'30-jul',h:'Defensa y Justicia',v:'Dep. Riestra',z:'Zona A'},
+    {id:'cl_b08',f:'Fecha 2',d:'30-jul',h:'Ind. Rivadavia',v:'Huracán',z:'Zona B'},
+    {id:'cl_b09',f:'Fecha 2',d:'30-jul',h:'Banfield',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_b10',f:'Fecha 2',d:'30-jul',h:'Argentinos Jrs',v:'Estudiantes RC',z:'Zona B'},
+    {id:'cl_b11',f:'Fecha 2',d:'30-jul',h:'Tigre',v:'Belgrano',z:'Zona B'},
+    {id:'cl_b12',f:'Fecha 2',d:'30-jul',h:'Rosario Central',v:'Racing Club',z:'Zona B'},
+    {id:'cl_b13',f:'Fecha 2',d:'30-jul',h:'Gimnasia LP',v:'River Plate',z:'Zona B'},
+    {id:'cl_b14',f:'Fecha 2',d:'30-jul',h:'Barracas Central',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_b15',f:'Fecha 2',d:'30-jul',h:'Central Córdoba',v:'Atlético Tucumán',z:'Interzonal'},
+    {id:'cl_c01',f:'Fecha 3',d:'2-ago',h:'Estudiantes LP',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_c03',f:'Fecha 3',d:'2-ago',h:'Vélez',v:'Independiente',z:'Zona A'},
+    {id:'cl_c04',f:'Fecha 3',d:'2-ago',h:'Platense',v:'Talleres',z:'Zona A'},
+    {id:'cl_c05',f:'Fecha 3',d:'2-ago',h:'Lanús',v:'Instituto',z:'Zona A'},
+    {id:'cl_c06',f:'Fecha 3',d:'2-ago',h:'Gimnasia Mza',v:'Unión',z:'Zona A'},
+    {id:'cl_c07',f:'Fecha 3',d:'2-ago',h:'Central Córdoba',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_c08',f:'Fecha 3',d:'2-ago',h:'Aldosivi',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_c09',f:'Fecha 3',d:'2-ago',h:'River Plate',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_c10',f:'Fecha 3',d:'2-ago',h:'Racing Club',v:'Tigre',z:'Zona B'},
+    {id:'cl_c11',f:'Fecha 3',d:'2-ago',h:'Belgrano',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_c12',f:'Fecha 3',d:'2-ago',h:'Estudiantes RC',v:'Banfield',z:'Zona B'},
+    {id:'cl_c13',f:'Fecha 3',d:'2-ago',h:'Sarmiento',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_c14',f:'Fecha 3',d:'2-ago',h:'Huracán',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_c15',f:'Fecha 3',d:'2-ago',h:'Dep. Riestra',v:'Barracas Central',z:'Interzonal'},
+    {id:'cl_d01',f:'Fecha 4',d:'9-ago',h:'Unión',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_d02',f:'Fecha 4',d:'9-ago',h:'Instituto',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_d03',f:'Fecha 4',d:'9-ago',h:'Talleres',v:'Lanús',z:'Zona A'},
+    {id:'cl_d04',f:'Fecha 4',d:'9-ago',h:'Independiente',v:'Platense',z:'Zona A'},
+    {id:'cl_d05',f:'Fecha 4',d:'9-ago',h:'Boca Juniors',v:'Vélez',z:'Zona A'},
+    {id:'cl_d07',f:'Fecha 4',d:'9-ago',h:'Dep. Riestra',v:'Estudiantes LP',z:'Zona A'},
+    {id:'cl_d08',f:'Fecha 4',d:'9-ago',h:'Atlético Tucumán',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_d09',f:'Fecha 4',d:'9-ago',h:'Ind. Rivadavia',v:'Estudiantes RC',z:'Zona B'},
+    {id:'cl_d10',f:'Fecha 4',d:'9-ago',h:'Banfield',v:'Belgrano',z:'Zona B'},
+    {id:'cl_d11',f:'Fecha 4',d:'9-ago',h:'Argentinos Jrs',v:'Racing Club',z:'Zona B'},
+    {id:'cl_d12',f:'Fecha 4',d:'9-ago',h:'Tigre',v:'River Plate',z:'Zona B'},
+    {id:'cl_d13',f:'Fecha 4',d:'9-ago',h:'Rosario Central',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_d14',f:'Fecha 4',d:'9-ago',h:'Gimnasia LP',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_d15',f:'Fecha 4',d:'9-ago',h:'San Lorenzo',v:'Huracán',z:'Interzonal'},
+    {id:'cl_e02',f:'Fecha 5',d:'16-ago',h:'Vélez',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_e03',f:'Fecha 5',d:'16-ago',h:'Platense',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_e04',f:'Fecha 5',d:'16-ago',h:'Lanús',v:'Independiente',z:'Zona A'},
+    {id:'cl_e05',f:'Fecha 5',d:'16-ago',h:'Gimnasia Mza',v:'Talleres',z:'Zona A'},
+    {id:'cl_e06',f:'Fecha 5',d:'16-ago',h:'Central Córdoba',v:'Instituto',z:'Zona A'},
+    {id:'cl_e07',f:'Fecha 5',d:'16-ago',h:'San Lorenzo',v:'Unión',z:'Zona A'},
+    {id:'cl_e08',f:'Fecha 5',d:'16-ago',h:'Barracas Central',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_e09',f:'Fecha 5',d:'16-ago',h:'Aldosivi',v:'Tigre',z:'Zona B'},
+    {id:'cl_e10',f:'Fecha 5',d:'16-ago',h:'River Plate',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_e11',f:'Fecha 5',d:'16-ago',h:'Racing Club',v:'Banfield',z:'Zona B'},
+    {id:'cl_e12',f:'Fecha 5',d:'16-ago',h:'Belgrano',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_e13',f:'Fecha 5',d:'16-ago',h:'Estudiantes RC',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_e14',f:'Fecha 5',d:'16-ago',h:'Sarmiento',v:'Huracán',z:'Zona B'},
+    {id:'cl_e15',f:'Fecha 5',d:'16-ago',h:'Estudiantes LP',v:'Gimnasia LP',z:'Interzonal'},
+    {id:'cl_f01',f:'Fecha 6',d:'23-ago',h:'River Plate',v:'Vélez',z:'Interzonal'},
+    {id:'cl_f02',f:'Fecha 6',d:'23-ago',h:'Barracas Central',v:'Platense',z:'Interzonal'},
+    {id:'cl_f03',f:'Fecha 6',d:'23-ago',h:'Talleres',v:'Rosario Central',z:'Interzonal'},
+    {id:'cl_f04',f:'Fecha 6',d:'23-ago',h:'Sarmiento',v:'Estudiantes LP',z:'Interzonal'},
+    {id:'cl_f05',f:'Fecha 6',d:'23-ago',h:'Belgrano',v:'Defensa y Justicia',z:'Interzonal'},
+    {id:'cl_f06',f:'Fecha 6',d:'23-ago',h:'Lanús',v:'Argentinos Jrs',z:'Interzonal'},
+    {id:'cl_f07',f:'Fecha 6',d:'23-ago',h:'Racing Club',v:'Boca Juniors',z:'Interzonal'},
+    {id:'cl_f08',f:'Fecha 6',d:'23-ago',h:'Independiente',v:'Ind. Rivadavia',z:'Interzonal'},
+    {id:'cl_f09',f:'Fecha 6',d:'23-ago',h:'Aldosivi',v:'Unión',z:'Interzonal'},
+    {id:'cl_f10',f:'Fecha 6',d:'23-ago',h:'Atlético Tucumán',v:'Instituto',z:'Interzonal'},
+    {id:'cl_f11',f:'Fecha 6',d:'23-ago',h:'Estudiantes RC',v:'San Lorenzo',z:'Interzonal'},
+    {id:'cl_f12',f:'Fecha 6',d:'23-ago',h:'Gimnasia LP',v:'Gimnasia Mza',z:'Interzonal'},
+    {id:'cl_f13',f:'Fecha 6',d:'23-ago',h:'Tigre',v:'Central Córdoba',z:'Interzonal'},
+    {id:'cl_f14',f:'Fecha 6',d:'23-ago',h:'Huracán',v:'Dep. Riestra',z:'Interzonal'},
+    {id:'cl_g01',f:'Fecha 7',d:'27-ago',h:'Instituto',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_g02',f:'Fecha 7',d:'27-ago',h:'Talleres',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_g03',f:'Fecha 7',d:'27-ago',h:'Independiente',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_g04',f:'Fecha 7',d:'27-ago',h:'Boca Juniors',v:'Lanús',z:'Zona A'},
+    {id:'cl_g05',f:'Fecha 7',d:'27-ago',h:'Defensa y Justicia',v:'Platense',z:'Zona A'},
+    {id:'cl_g06',f:'Fecha 7',d:'27-ago',h:'Dep. Riestra',v:'Vélez',z:'Zona A'},
+    {id:'cl_g08',f:'Fecha 7',d:'27-ago',h:'Huracán',v:'Estudiantes RC',z:'Zona B'},
+    {id:'cl_g09',f:'Fecha 7',d:'27-ago',h:'Atlético Tucumán',v:'Belgrano',z:'Zona B'},
+    {id:'cl_g10',f:'Fecha 7',d:'27-ago',h:'Ind. Rivadavia',v:'Racing Club',z:'Zona B'},
+    {id:'cl_g11',f:'Fecha 7',d:'27-ago',h:'Banfield',v:'River Plate',z:'Zona B'},
+    {id:'cl_g12',f:'Fecha 7',d:'27-ago',h:'Argentinos Jrs',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_g13',f:'Fecha 7',d:'27-ago',h:'Tigre',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_g14',f:'Fecha 7',d:'27-ago',h:'Rosario Central',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_g15',f:'Fecha 7',d:'27-ago',h:'Unión',v:'Sarmiento',z:'Interzonal'},
+    {id:'cl_h01',f:'Fecha 8',d:'30-ago',h:'Vélez',v:'Estudiantes LP',z:'Zona A'},
+    {id:'cl_h02',f:'Fecha 8',d:'30-ago',h:'Platense',v:'Dep. Riestra',z:'Zona A'},
+    {id:'cl_h03',f:'Fecha 8',d:'30-ago',h:'Lanús',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_h04',f:'Fecha 8',d:'30-ago',h:'Gimnasia Mza',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_h05',f:'Fecha 8',d:'30-ago',h:'Central Córdoba',v:'Independiente',z:'Zona A'},
+    {id:'cl_h06',f:'Fecha 8',d:'30-ago',h:'San Lorenzo',v:'Talleres',z:'Zona A'},
+    {id:'cl_h07',f:'Fecha 8',d:'30-ago',h:'Unión',v:'Instituto',z:'Zona A'},
+    {id:'cl_h08',f:'Fecha 8',d:'30-ago',h:'Gimnasia LP',v:'Tigre',z:'Zona B'},
+    {id:'cl_h09',f:'Fecha 8',d:'30-ago',h:'Barracas Central',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_h10',f:'Fecha 8',d:'30-ago',h:'Aldosivi',v:'Banfield',z:'Zona B'},
+    {id:'cl_h11',f:'Fecha 8',d:'30-ago',h:'River Plate',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_h12',f:'Fecha 8',d:'30-ago',h:'Racing Club',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_h13',f:'Fecha 8',d:'30-ago',h:'Belgrano',v:'Huracán',z:'Zona B'},
+    {id:'cl_h14',f:'Fecha 8',d:'30-ago',h:'Estudiantes RC',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_i01',f:'Fecha 9',d:'6-sep',h:'Talleres',v:'Unión',z:'Zona A'},
+    {id:'cl_i02',f:'Fecha 9',d:'6-sep',h:'Independiente',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_i03',f:'Fecha 9',d:'6-sep',h:'Boca Juniors',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_i04',f:'Fecha 9',d:'6-sep',h:'Defensa y Justicia',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_i05',f:'Fecha 9',d:'6-sep',h:'Dep. Riestra',v:'Lanús',z:'Zona A'},
+    {id:'cl_i06',f:'Fecha 9',d:'6-sep',h:'Estudiantes LP',v:'Platense',z:'Zona A'},
+    {id:'cl_i08',f:'Fecha 9',d:'6-sep',h:'Sarmiento',v:'Belgrano',z:'Zona B'},
+    {id:'cl_i09',f:'Fecha 9',d:'6-sep',h:'Huracán',v:'Racing Club',z:'Zona B'},
+    {id:'cl_i10',f:'Fecha 9',d:'6-sep',h:'Atlético Tucumán',v:'River Plate',z:'Zona B'},
+    {id:'cl_i11',f:'Fecha 9',d:'6-sep',h:'Ind. Rivadavia',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_i12',f:'Fecha 9',d:'6-sep',h:'Banfield',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_i13',f:'Fecha 9',d:'6-sep',h:'Argentinos Jrs',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_i14',f:'Fecha 9',d:'6-sep',h:'Tigre',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_i15',f:'Fecha 9',d:'6-sep',h:'Instituto',v:'Estudiantes RC',z:'Interzonal'},
+    {id:'cl_j02',f:'Fecha 10',d:'13-sep',h:'Lanús',v:'Estudiantes LP',z:'Zona A'},
+    {id:'cl_j03',f:'Fecha 10',d:'13-sep',h:'Gimnasia Mza',v:'Dep. Riestra',z:'Zona A'},
+    {id:'cl_j04',f:'Fecha 10',d:'13-sep',h:'Central Córdoba',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_j05',f:'Fecha 10',d:'13-sep',h:'San Lorenzo',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_j06',f:'Fecha 10',d:'13-sep',h:'Unión',v:'Independiente',z:'Zona A'},
+    {id:'cl_j07',f:'Fecha 10',d:'13-sep',h:'Instituto',v:'Talleres',z:'Zona A'},
+    {id:'cl_j08',f:'Fecha 10',d:'13-sep',h:'Rosario Central',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_j09',f:'Fecha 10',d:'13-sep',h:'Gimnasia LP',v:'Banfield',z:'Zona B'},
+    {id:'cl_j10',f:'Fecha 10',d:'13-sep',h:'Barracas Central',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_j11',f:'Fecha 10',d:'13-sep',h:'Aldosivi',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_j12',f:'Fecha 10',d:'13-sep',h:'River Plate',v:'Huracán',z:'Zona B'},
+    {id:'cl_j13',f:'Fecha 10',d:'13-sep',h:'Racing Club',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_j14',f:'Fecha 10',d:'13-sep',h:'Belgrano',v:'Estudiantes RC',z:'Zona B'},
+    {id:'cl_j15',f:'Fecha 10',d:'13-sep',h:'Vélez',v:'Tigre',z:'Interzonal'},
+    {id:'cl_k01',f:'Fecha 11',d:'20-sep',h:'Independiente',v:'Instituto',z:'Zona A'},
+    {id:'cl_k02',f:'Fecha 11',d:'20-sep',h:'Boca Juniors',v:'Unión',z:'Zona A'},
+    {id:'cl_k03',f:'Fecha 11',d:'20-sep',h:'Defensa y Justicia',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_k04',f:'Fecha 11',d:'20-sep',h:'Dep. Riestra',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_k05',f:'Fecha 11',d:'20-sep',h:'Estudiantes LP',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_k07',f:'Fecha 11',d:'20-sep',h:'Vélez',v:'Platense',z:'Zona A'},
+    {id:'cl_k08',f:'Fecha 11',d:'20-sep',h:'Estudiantes RC',v:'Racing Club',z:'Zona B'},
+    {id:'cl_k09',f:'Fecha 11',d:'20-sep',h:'Sarmiento',v:'River Plate',z:'Zona B'},
+    {id:'cl_k10',f:'Fecha 11',d:'20-sep',h:'Huracán',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_k11',f:'Fecha 11',d:'20-sep',h:'Atlético Tucumán',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_k12',f:'Fecha 11',d:'20-sep',h:'Ind. Rivadavia',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_k13',f:'Fecha 11',d:'20-sep',h:'Banfield',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_k14',f:'Fecha 11',d:'20-sep',h:'Argentinos Jrs',v:'Tigre',z:'Zona B'},
+    {id:'cl_k15',f:'Fecha 11',d:'20-sep',h:'Talleres',v:'Belgrano',z:'Interzonal'},
+    {id:'cl_l01',f:'Fecha 12',d:'27-sep',h:'San Lorenzo',v:'Vélez',z:'Zona A'},
+    {id:'cl_l02',f:'Fecha 12',d:'27-sep',h:'Unión',v:'Dep. Riestra',z:'Zona A'},
+    {id:'cl_l03',f:'Fecha 12',d:'27-sep',h:'Instituto',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_l04',f:'Fecha 12',d:'27-sep',h:'Central Córdoba',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_l05',f:'Fecha 12',d:'27-sep',h:'Gimnasia Mza',v:'Independiente',z:'Zona A'},
+    {id:'cl_l06',f:'Fecha 12',d:'27-sep',h:'Lanús',v:'Talleres',z:'Zona A'},
+    {id:'cl_l08',f:'Fecha 12',d:'27-sep',h:'Rosario Central',v:'Estudiantes RC',z:'Zona B'},
+    {id:'cl_l09',f:'Fecha 12',d:'27-sep',h:'Barracas Central',v:'Huracán',z:'Zona B'},
+    {id:'cl_l10',f:'Fecha 12',d:'27-sep',h:'Gimnasia LP',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_l11',f:'Fecha 12',d:'27-sep',h:'Tigre',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_l12',f:'Fecha 12',d:'27-sep',h:'Aldosivi',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_l13',f:'Fecha 12',d:'27-sep',h:'Argentinos Jrs',v:'Banfield',z:'Zona B'},
+    {id:'cl_l14',f:'Fecha 12',d:'27-sep',h:'River Plate',v:'Belgrano',z:'Zona B'},
+    {id:'cl_l15',f:'Fecha 12',d:'27-sep',h:'Estudiantes LP',v:'Racing Club',z:'Interzonal'},
+    {id:'cl_m01',f:'Fecha 13',d:'4-oct',h:'Vélez',v:'San Lorenzo',z:'Zona A'},
+    {id:'cl_m02',f:'Fecha 13',d:'4-oct',h:'Defensa y Justicia',v:'Unión',z:'Zona A'},
+    {id:'cl_m03',f:'Fecha 13',d:'4-oct',h:'Boca Juniors',v:'Instituto',z:'Zona A'},
+    {id:'cl_m04',f:'Fecha 13',d:'4-oct',h:'Talleres',v:'Gimnasia Mza',z:'Zona A'},
+    {id:'cl_m05',f:'Fecha 13',d:'4-oct',h:'Independiente',v:'Lanús',z:'Zona A'},
+    {id:'cl_m06',f:'Fecha 13',d:'4-oct',h:'Central Córdoba',v:'Platense',z:'Zona A'},
+    {id:'cl_m08',f:'Fecha 13',d:'4-oct',h:'Estudiantes RC',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_m09',f:'Fecha 13',d:'4-oct',h:'Huracán',v:'Barracas Central',z:'Zona B'},
+    {id:'cl_m10',f:'Fecha 13',d:'4-oct',h:'Atlético Tucumán',v:'Gimnasia LP',z:'Zona B'},
+    {id:'cl_m11',f:'Fecha 13',d:'4-oct',h:'Ind. Rivadavia',v:'Tigre',z:'Zona B'},
+    {id:'cl_m12',f:'Fecha 13',d:'4-oct',h:'Sarmiento',v:'Aldosivi',z:'Zona B'},
+    {id:'cl_m13',f:'Fecha 13',d:'4-oct',h:'Banfield',v:'Argentinos Jrs',z:'Zona B'},
+    {id:'cl_m14',f:'Fecha 13',d:'4-oct',h:'Belgrano',v:'River Plate',z:'Zona B'},
+    {id:'cl_m15',f:'Fecha 13',d:'4-oct',h:'Racing Club',v:'Dep. Riestra',z:'Interzonal'},
+    {id:'cl_n01',f:'Fecha 14',d:'11-oct',h:'Vélez',v:'Boca Juniors',z:'Zona A'},
+    {id:'cl_n03',f:'Fecha 14',d:'11-oct',h:'Platense',v:'Independiente',z:'Zona A'},
+    {id:'cl_n04',f:'Fecha 14',d:'11-oct',h:'Unión',v:'Talleres',z:'Zona A'},
+    {id:'cl_n05',f:'Fecha 14',d:'11-oct',h:'Lanús',v:'Central Córdoba',z:'Zona A'},
+    {id:'cl_n06',f:'Fecha 14',d:'11-oct',h:'San Lorenzo',v:'Defensa y Justicia',z:'Zona A'},
+    {id:'cl_n07',f:'Fecha 14',d:'11-oct',h:'Instituto',v:'Dep. Riestra',z:'Zona A'},
+    {id:'cl_n08',f:'Fecha 14',d:'11-oct',h:'Gimnasia LP',v:'Sarmiento',z:'Zona B'},
+    {id:'cl_n09',f:'Fecha 14',d:'11-oct',h:'Racing Club',v:'Ind. Rivadavia',z:'Zona B'},
+    {id:'cl_n10',f:'Fecha 14',d:'11-oct',h:'Tigre',v:'Atlético Tucumán',z:'Zona B'},
+    {id:'cl_n11',f:'Fecha 14',d:'11-oct',h:'Argentinos Jrs',v:'Huracán',z:'Zona B'},
+    {id:'cl_n12',f:'Fecha 14',d:'11-oct',h:'Barracas Central',v:'Belgrano',z:'Zona B'},
+    {id:'cl_n13',f:'Fecha 14',d:'11-oct',h:'River Plate',v:'Banfield',z:'Zona B'},
+    {id:'cl_n14',f:'Fecha 14',d:'11-oct',h:'Aldosivi',v:'Rosario Central',z:'Zona B'},
+    {id:'cl_n15',f:'Fecha 14',d:'11-oct',h:'Estudiantes RC',v:'Estudiantes LP',z:'Interzonal'},
+  ];
+
+  const FIXTURE_DATA = { 'liga-pro': LP, 'clausura': LC, 'libertadores': LIB, 'mundial': WC, 'copa-argentina': CA, 'sudamericana': SUD };
+
+  // ── Bracket data ──────────────────────────────────────────
+  const R16 = [
+    {id:'r0',t1:'1° Grupo A',t2:'2° Grupo H'},{id:'r1',t1:'1° Grupo B',t2:'2° Grupo G'},
+    {id:'r2',t1:'1° Grupo C',t2:'2° Grupo F'},{id:'r3',t1:'1° Grupo D',t2:'2° Grupo E'},
+    {id:'r4',t1:'1° Grupo E',t2:'2° Grupo D'},{id:'r5',t1:'1° Grupo F',t2:'2° Grupo C'},
+    {id:'r6',t1:'1° Grupo G',t2:'2° Grupo B'},{id:'r7',t1:'1° Grupo H',t2:'2° Grupo A'},
+  ];
+  const BRACKET_TREE = {
+    qL1:{p:['r0','r1']},qL2:{p:['r2','r3']},sL:{p:['qL1','qL2']},
+    fin:{p:['sL','sR']},
+    sR:{p:['qR1','qR2']},qR1:{p:['r4','r5']},qR2:{p:['r6','r7']},
+  };
+  const BRACKET_COLS = [
+    {id:'left-r16', label:'Octavos', ids:['r0','r1','r2','r3']},
+    {id:'left-qf',  label:'Cuartos', ids:['qL1','qL2']},
+    {id:'left-sf',  label:'Semis',   ids:['sL']},
+    {id:'final',    label:'Final',   ids:['fin']},
+    {id:'right-sf', label:'Semis',   ids:['sR']},
+    {id:'right-qf', label:'Cuartos', ids:['qR1','qR2']},
+    {id:'right-r16',label:'Octavos', ids:['r4','r5','r6','r7']},
+  ];
+  const BRACKET_ROUNDS_MOBILE = [
+    {label:'Octavos de final', pts:'1 pt',  ids:['r0','r1','r2','r3','r4','r5','r6','r7']},
+    {label:'Cuartos de final', pts:'2 pts', ids:['qL1','qL2','qR1','qR2']},
+    {label:'Semifinales',      pts:'4 pts', ids:['sL','sR']},
+    {label:'Gran Final',       pts:'8 pts', ids:['fin']},
+  ];
+
+  // ── Efectos ───────────────────────────────────────────────
+  useEffect(() => {
+    const onResize = () => setMobile(isMobile());
+    window.addEventListener('resize', onResize);
+    loadLocal();
+    if (sb) loadRemote();
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  function loadLocal() {
+    try {
+      const p = JSON.parse(localStorage.getItem('tribu_picks_v2') || '{}');
+      const r = JSON.parse(localStorage.getItem('tribu_results_v2') || '{}');
+      setPicks(p); setResults(r);
+    } catch {}
+  }
+
+  async function loadRemote() {
+    setLoading(true);
+    try {
+      const [{ data: dbPicks }, { data: dbResults }] = await Promise.all([
+        sb.from('tribu_picks').select('*'),
+        sb.from('tribu_results').select('*'),
+      ]);
+      // Mis picks
+      if (dbPicks && user && !user.isGuest) {
+        const mine = {};
+        dbPicks.filter(p => p.user_id === (user.id || user.email)).forEach(p => { mine[p.match_id] = p.pick; });
+        setPicks(mine);
+      }
+      // Resultados
+      if (dbResults) {
+        const res = {};
+        dbResults.forEach(r => { res[r.match_id] = r.result; });
+        setResults(res);
+      }
+      // Ranking
+      if (dbPicks && dbResults) calcRanking(dbPicks, dbResults);
+    } catch(e) { console.warn('Tribu remote load:', e.message); }
+    setLoading(false);
+  }
+
+  function calcRanking(allP, allR) {
+    const resMap = {};
+    (allR || []).forEach(r => { resMap[r.match_id] = r.result; });
+    const users = {};
+    (allP || []).forEach(p => {
+      if (!users[p.user_id]) users[p.user_id] = { user_id: p.user_id, username: p.username || p.user_id, pts: 0, cor: 0, wrg: 0 };
+      const res = resMap[p.match_id];
+      if (res) {
+        const ptVal = BRACKET_PTS[p.match_id] || FIXTURE_PTS;
+        if (p.pick === res) { users[p.user_id].pts += ptVal; users[p.user_id].cor++; }
+        else users[p.user_id].wrg++;
+      }
+    });
+    setRanking(Object.values(users).sort((a,b) => b.pts - a.pts));
+  }
+
+  async function savePick(matchId, value) {
+    const next = { ...picks };
+    if (next[matchId] === value) {
+      delete next[matchId];
+      clearBracketDown(matchId, next);
+    } else {
+      next[matchId] = value;
+      clearBracketDown(matchId, next);
+    }
+    setPicks(next);
+    try { localStorage.setItem('tribu_picks_v2', JSON.stringify(next)); } catch {}
+    if (sb && user && !user.isGuest) {
+      setSaving(true);
+      try {
+        if (next[matchId]) {
+          await sb.from('tribu_picks').upsert({
+            user_id: user.id || user.email,
+            username: user.displayName || user.username || user.email,
+            match_id: matchId,
+            competition: comp,
+            pick: next[matchId],
+          }, { onConflict: 'user_id,match_id' });
+        } else {
+          await sb.from('tribu_picks').delete().eq('user_id', user.id || user.email).eq('match_id', matchId);
+        }
+        loadRemote();
+      } catch(e) { console.warn('Save pick:', e.message); }
+      setSaving(false);
+    }
+  }
+
+  async function saveResult(matchId, value) {
+    const next = { ...results };
+    if (next[matchId] === value) delete next[matchId]; else next[matchId] = value;
+    setResults(next);
+    try { localStorage.setItem('tribu_results_v2', JSON.stringify(next)); } catch {}
+    if (sb) {
+      try {
+        if (next[matchId]) {
+          await sb.from('tribu_results').upsert({ match_id: matchId, competition: comp, result: next[matchId] }, { onConflict: 'match_id' });
+        } else {
+          await sb.from('tribu_results').delete().eq('match_id', matchId);
+        }
+      } catch(e) { console.warn('Save result:', e.message); }
+    }
+  }
+
+  function clearBracketDown(mid, nextPicks) {
+    for (const [k, node] of Object.entries(BRACKET_TREE)) {
+      if (node.p.includes(mid)) { delete nextPicks[k]; clearBracketDown(k, nextPicks); }
+    }
+  }
+
+  // ── Helpers bracket ───────────────────────────────────────
+  function getBracketTeam(mid, slot) {
+    const r16 = R16.find(m => m.id === mid);
+    if (r16) return r16[slot];
+    const node = BRACKET_TREE[mid];
+    if (!node) return '?';
+    const src = slot === 't1' ? node.p[0] : node.p[1];
+    const pk = picks[src];
+    if (!pk) return '?';
+    return getBracketTeam(src, pk);
+  }
+  function canPickBracket(mid) {
+    if (!BRACKET_TREE[mid]) return true;
+    const [p1, p2] = BRACKET_TREE[mid].p;
+    return !!picks[p1] && !!picks[p2];
+  }
+
+  // ── Puntos resumen ────────────────────────────────────────
+  function myStats() {
+    const allFixtures = Object.values(FIXTURE_DATA).flat();
+    const allBracketIds = [...R16.map(m => m.id), ...Object.keys(BRACKET_TREE)];
+    let pts = 0, possible = 0, cor = 0, wrg = 0;
+    [...allFixtures.map(m=>m.id), ...allBracketIds].forEach(mid => {
+      const pk = picks[mid], res = results[mid];
+      const ptVal = BRACKET_PTS[mid] || FIXTURE_PTS;
+      if (pk && res) { if (pk === res) { pts += ptVal; cor++; } else wrg++; }
+      else if (pk && !res) possible += ptVal;
+    });
+    return { pts, possible, cor, wrg };
+  }
+
+  const st = myStats();
+  const currentFixtures = FIXTURE_DATA[comp] || [];
+  const fetchas = ['all', ...Array.from(new Set(currentFixtures.map(m => m.f)))];
+  const filtered = currentFixtures.filter(m => {
+    const s = search.toLowerCase();
+    const ms = !s || m.h.toLowerCase().includes(s) || m.v.toLowerCase().includes(s);
+    const mf = filterFecha === 'all' || m.f === filterFecha;
+    return ms && mf;
+  });
+  const groups = filtered.reduce((acc, m) => { if (!acc[m.f]) acc[m.f] = []; acc[m.f].push(m); return acc; }, {});
+
+  // ── RENDER ────────────────────────────────────────────────
+  const sty = {
+    wrap: { maxWidth: 760, margin: '0 auto' },
+    banner: { background: 'linear-gradient(135deg,var(--cel-d),var(--cel))', borderRadius: 'var(--rl)', padding: '16px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 14 },
+    bannerIco: { fontSize: 30, lineHeight: 1 },
+    bannerT: { fontFamily: 'var(--fd)', fontSize: 22, fontWeight: 700, color: 'white', letterSpacing: 1 },
+    bannerS: { fontSize: 12, color: 'rgba(255,255,255,.75)', marginTop: 2 },
+    tabs: { display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' },
+    tab: (on) => ({ padding: '7px 16px', borderRadius: 30, fontFamily: 'var(--fd)', fontSize: 12, fontWeight: 600, letterSpacing: .5, border: on ? 'none' : '2px solid var(--cel)', background: on ? 'var(--cel)' : 'transparent', color: on ? 'white' : 'var(--cel)', cursor: 'pointer', transition: '.15s' }),
+    compRow: { display: 'flex', gap: 6, marginBottom: 14, flexWrap: 'wrap' },
+    compBtn: (on) => ({ padding: '5px 11px', borderRadius: 20, fontFamily: 'var(--fd)', fontSize: 11, fontWeight: 600, letterSpacing: .5, border: on ? 'none' : '1.5px solid var(--br)', background: on ? 'var(--cel-d)' : 'var(--white)', color: on ? 'white' : 'var(--tx2)', cursor: 'pointer', transition: '.15s' }),
+    statsRow: { display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 8, marginBottom: 16 },
+    statCard: (bg, col) => ({ background: bg || 'var(--cel-xl)', borderRadius: 'var(--r)', padding: '10px 12px', textAlign: 'center', border: '1px solid var(--br)' }),
+    statLbl: (col) => ({ fontSize: 10, color: col || 'var(--tx3)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: .5, marginBottom: 3 }),
+    statVal: (col) => ({ fontFamily: 'var(--fd)', fontSize: 22, fontWeight: 700, color: col || 'var(--cel-d)' }),
+    secHdr: { display: 'flex', alignItems: 'center', gap: 8, margin: '18px 0 12px', borderBottom: '2px solid var(--cel)', paddingBottom: 8 },
+    secT: { fontFamily: 'var(--fd)', fontSize: 15, fontWeight: 700, color: 'var(--tx)', textTransform: 'uppercase', letterSpacing: 1 },
+    secBadge: (c) => ({ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: c||'var(--cel-xl)', color: 'var(--cel-d)', fontWeight: 700 }),
+  };
+
+  // ── TAB: PREDECIR ─────────────────────────────────────────
+  function renderPredecir() {
+    return (
+      <div>
+        {/* Competencia */}
+        <div style={sty.compRow}>
+          {COMPS.map(c => (
+            <button key={c.id} style={sty.compBtn(comp===c.id)} onClick={()=>{setComp(c.id);setSearch('');setFilterFecha('all');}}>
+              {c.emoji} {c.label}
+            </button>
+          ))}
         </div>
-        {favEquipos.length > 0 && (
-          <div onClick={()=>setTab('favs')} style={{marginLeft:'auto',background:'rgba(255,255,255,.2)',borderRadius:8,padding:'3px 9px',fontSize:10,fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
-            ★ {favEquipos.length} fav
+
+        {/* Stats */}
+        <div style={{...sty.statsRow, gridTemplateColumns: mobile ? 'repeat(2,1fr)' : 'repeat(4,1fr)'}}>
+          <div style={sty.statCard('var(--cel-xl)')}><div style={sty.statLbl()}>Mis puntos</div><div style={sty.statVal()}>{st.pts}</div></div>
+          <div style={sty.statCard('var(--cel-xl)')}><div style={sty.statLbl()}>En juego</div><div style={sty.statVal()}>{st.possible}</div></div>
+          <div style={sty.statCard('rgba(39,174,96,.1)')}><div style={sty.statLbl('var(--green)')}>✓ Correctas</div><div style={sty.statVal('var(--green)')}>{st.cor}</div></div>
+          <div style={sty.statCard('rgba(192,57,43,.08)')}><div style={sty.statLbl('var(--red)')}>✗ Falladas</div><div style={sty.statVal('var(--red)')}>{st.wrg}</div></div>
+        </div>
+
+        {/* ═══ CUADRO/BRACKET (Libertadores) ═══ */}
+        {comp === 'libertadores' && (
+          <div>
+            <div style={sty.secHdr}>
+              <span style={sty.secT}>🏆 Cuadro · Fase Eliminatoria</span>
+              <span style={sty.secBadge()}>Puntos: Octavos 1 · Cuartos 2 · Semis 4 · Final 8</span>
+            </div>
+            {adminMode && isAdmin && <div style={{background:'rgba(246,180,14,.12)',border:'1px solid var(--sun)',borderRadius:'var(--rs)',padding:'7px 12px',marginBottom:10,fontSize:11,color:'var(--tx2)'}}>⚙️ Modo admin activado — hacé click en el equipo ganador real para cargar resultados</div>}
+            {mobile ? renderBracketMobile() : renderBracketDesktop()}
+          </div>
+        )}
+
+        {/* ═══ FIXTURE 1×2 ═══ */}
+        <div>
+          <div style={sty.secHdr}>
+            <span style={sty.secT}>⚽ Fixture · Predecí 1×2</span>
+            <span style={sty.secBadge('rgba(39,174,96,.12)')} style={{fontSize:10,padding:'2px 8px',borderRadius:10,background:'rgba(39,174,96,.12)',color:'var(--green)',fontWeight:700}}>+{FIXTURE_PTS} pts por acierto</span>
+          </div>
+          {/* Filtros */}
+          <div style={{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap'}}>
+            <input
+              type="text" placeholder="Buscar equipo..." value={search} onChange={e=>setSearch(e.target.value)}
+              style={{flex:1,minWidth:140,padding:'7px 11px',borderRadius:'var(--rs)',border:'1.5px solid var(--br)',background:'var(--white)',fontSize:12,color:'var(--tx)'}}
+            />
+            <select value={filterFecha} onChange={e=>setFilterFecha(e.target.value)}
+              style={{padding:'7px 11px',borderRadius:'var(--rs)',border:'1.5px solid var(--br)',background:'var(--white)',fontSize:12,color:'var(--tx)',cursor:'pointer'}}>
+              {fetchas.map(f => <option key={f} value={f}>{f==='all'?'Todas las fechas':f}</option>)}
+            </select>
+          </div>
+          {/* Matches */}
+          {Object.entries(groups).map(([fecha, matches]) => (
+            <div key={fecha} style={{marginBottom:18}}>
+              <div style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700,color:'var(--tx3)',textTransform:'uppercase',letterSpacing:1,padding:'4px 0 8px',borderBottom:'1px solid var(--br)',marginBottom:8}}>
+                {fecha}
+              </div>
+              {matches.map(m => renderFixtureCard(m))}
+            </div>
+          ))}
+          {Object.keys(groups).length === 0 && (
+            <div style={{textAlign:'center',padding:'2rem 1rem',color:'var(--tx3)',fontSize:13}}>No hay partidos que coincidan.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Fixture card ──────────────────────────────────────────
+  function renderFixtureCard(m) {
+    const pk = adminMode && isAdmin ? null : picks[m.id];
+    const res = results[m.id];
+    const isGuest = !user || user.isGuest;
+
+    function btnStyle(code) {
+      const sel = adminMode && isAdmin ? res === code : pk === code;
+      const cor = !adminMode && pk === code && res === code;
+      const wrg = !adminMode && pk === code && res && res !== code;
+      let bg = 'var(--white)', col = 'var(--tx3)', brd = 'var(--br)';
+      if (cor) { bg='rgba(39,174,96,.12)'; col='var(--green)'; brd='var(--green)'; }
+      else if (wrg) { bg='rgba(192,57,43,.08)'; col='var(--red)'; brd='var(--red)'; }
+      else if (sel) { bg='var(--cel-xl)'; col='var(--cel-d)'; brd='var(--cel)'; }
+      return { flex:1, padding:mobile?'6px 2px':'7px 6px', borderRadius:'var(--rs)', border:`1.5px solid ${brd}`, background:bg, color:col, fontSize:mobile?10:11, fontWeight:600, cursor: isGuest?'not-allowed':'pointer', opacity: isGuest?.6:1, display:'flex', flexDirection:'column', alignItems:'center', gap:1, transition:'.12s' };
+    }
+
+    const labels = {
+      '1': { code:'1', lbl: m.h.length>10 ? m.h.substring(0,9)+'…' : m.h },
+      'X': { code:'X', lbl:'Empate' },
+      '2': { code:'2', lbl: m.v.length>10 ? m.v.substring(0,9)+'…' : m.v },
+    };
+
+    return (
+      <div key={m.id} style={{background:'var(--white)',border:`1px solid ${picks[m.id]&&!adminMode?'var(--cel)':'var(--br)'}`,borderRadius:'var(--r)',padding:'10px 12px',marginBottom:8,transition:'.15s'}}>
+        <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:8,fontSize:10,color:'var(--tx3)'}}>
+          <span style={{background:'var(--cel-xl)',padding:'2px 7px',borderRadius:10,fontWeight:600,color:'var(--cel-d)'}}>{m.d}</span>
+          <span>{m.z}</span>
+          {results[m.id] && <span style={{marginLeft:'auto',background:'rgba(39,174,96,.12)',color:'var(--green)',padding:'2px 7px',borderRadius:10,fontWeight:700,fontSize:9}}>JUGADO</span>}
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:6,alignItems:'center',marginBottom:9}}>
+          <span style={{fontFamily:'var(--fd)',fontSize:mobile?12:13,fontWeight:600,color:'var(--tx)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{m.h}</span>
+          <span style={{fontSize:10,color:'var(--tx3)',padding:'0 4px'}}>vs</span>
+          <span style={{fontFamily:'var(--fd)',fontSize:mobile?12:13,fontWeight:600,color:'var(--tx)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textAlign:'right'}}>{m.v}</span>
+        </div>
+        <div style={{display:'flex',gap:6}}>
+          {['1','X','2'].map(code => (
+            <button key={code} style={btnStyle(code)}
+              onClick={() => {
+                if (isGuest) { addToast({msg:'Iniciá sesión para predecir',type:'warn'}); return; }
+                if (adminMode && isAdmin) saveResult(m.id, code);
+                else savePick(m.id, code);
+              }}>
+              <span style={{fontSize:mobile?13:15,fontWeight:700}}>{code}</span>
+              <span style={{fontSize:mobile?8:9,opacity:.75,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:60}}>{labels[code].lbl}</span>
+            </button>
+          ))}
+        </div>
+        {picks[m.id] && !adminMode && (
+          <div style={{fontSize:10,marginTop:5,color:'var(--cel-d)',fontWeight:600}}>
+            Guardado · {picks[m.id]==='1'?m.h:picks[m.id]==='2'?m.v:'Empate'}
           </div>
         )}
       </div>
+    );
+  }
 
-      {/* ── 2. BANNER IMAGEN GRANDE ── */}
-      <div style={{borderRadius:'var(--r)',overflow:'hidden',marginBottom:12,position:'relative'}}>
-        <img
-          src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/latribupredice.JPG"
-          alt="La Tribu Predice"
-          style={{width:'100%',display:'block',maxHeight:160,objectFit:'cover',objectPosition:'center top'}}
-          onError={e=>{e.target.style.display='none';}}
-        />
-      </div>
+  // ── Bracket desktop ───────────────────────────────────────
+  function renderBracketDesktop() {
+    function matchBox(mid, isFinal) {
+      const t1 = getBracketTeam(mid,'t1'), t2 = getBracketTeam(mid,'t2');
+      const avail = canPickBracket(mid);
+      const isGuest = !user || user.isGuest;
 
-      {/* ── 3. MENÚ HORIZONTAL ── */}
-      <div style={{display:'flex',gap:4,overflowX:'auto',scrollbarWidth:'none',marginBottom:4,paddingBottom:2}}>
-        {MENU_TABS.map(t => (
-          <button key={t.id} onClick={()=>setTab(t.id)}
-            style={{flexShrink:0,padding:'6px 12px',borderRadius:16,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',transition:'all .15s',
-              background: tab===t.id ? accentColor : 'var(--bg2)',
-              color: tab===t.id ? 'white' : 'var(--tx2)'}}>
-            {t.l}
+      function tSty(slot) {
+        const pk = adminMode && isAdmin ? null : picks[mid];
+        const res = results[mid];
+        const sel = adminMode ? res===slot : pk===slot;
+        const cor = !adminMode && pk===slot && res===slot;
+        const wrg = !adminMode && pk===slot && res && res!==slot;
+        let bg='transparent',col='var(--tx3)';
+        if (cor){bg='rgba(39,174,96,.12)';col='var(--green)';}
+        else if(wrg){bg='rgba(192,57,43,.08)';col='var(--red)';}
+        else if(sel){bg='var(--cel-xl)';col='var(--cel-d)';}
+        return {display:'flex',alignItems:'center',height:30,padding:'0 8px',fontSize:10,color:col,background:bg,cursor:(avail&&!isGuest)?'pointer':'default',opacity:avail?1:.4,border:'none',width:'100%',textAlign:'left',overflow:'hidden',whiteSpace:'nowrap',transition:'.12s',fontWeight:sel?700:400};
+      }
+
+      return (
+        <div key={mid} style={{background:'var(--white)',border:`1px solid ${isFinal?'var(--sun)':'var(--br)'}`,borderRadius:'var(--rs)',overflow:'hidden',marginBottom:isFinal?0:4,minWidth:110}}>
+          <button style={tSty('t1')} onClick={()=>{if(!avail||isGuest)return;if(adminMode&&isAdmin)saveResult(mid,'t1');else savePick(mid,'t1');}}>
+            {t1.length>13?t1.substring(0,12)+'…':t1}
           </button>
-        ))}
-      </div>
-
-      {/* Descripción del tab activo */}
-      {tabActivo && tab!=='admin' && (
-        <div style={{fontSize:11,color:'var(--tx3)',marginBottom:12,paddingLeft:2}}>{tabActivo.sub}</div>
-      )}
-
-      {/* ── 4. SELECTOR DE COMPETENCIA (dentro de los tabs que lo necesitan) ── */}
-      {(tab==='pronosticos'||tab==='predicciones'||tab==='quiniela'||tab==='desafio') && (
-        <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}}>
-          {competencias.map(c => (
-            <button key={c.id} onClick={()=>setCompActiva(c.id)}
-              style={{padding:'4px 11px',borderRadius:14,border:`1.5px solid ${compActiva===c.id?c.color||accentColor:'var(--bd)'}`,cursor:'pointer',fontSize:11,fontWeight:600,whiteSpace:'nowrap',
-                background: compActiva===c.id ? c.color||accentColor : 'var(--card)',
-                color: compActiva===c.id ? 'white' : 'var(--tx2)', transition:'all .15s'}}>
-              {COMP_EMOJI[c.slug]||'🏆'} {c.nombre}
-            </button>
-          ))}
+          <div style={{height:1,background:'var(--br)'}}/>
+          <button style={tSty('t2')} onClick={()=>{if(!avail||isGuest)return;if(adminMode&&isAdmin)saveResult(mid,'t2');else savePick(mid,'t2');}}>
+            {t2.length>13?t2.substring(0,12)+'…':t2}
+          </button>
+          {isFinal && <div style={{textAlign:'center',fontSize:16,padding:'2px 0',opacity:.3}}>🏆</div>}
         </div>
-      )}
+      );
+    }
 
-      {/* Selector temporada */}
-      {(tab==='pronosticos'||tab==='predicciones'||tab==='quiniela'||tab==='desafio') && temporadas.length > 0 && (
-        <div style={{display:'flex',gap:5,marginBottom:10,flexWrap:'wrap',alignItems:'center'}}>
-          <span style={{fontSize:10,color:'var(--tx3)'}}>📅</span>
-          {temporadas.map(t => (
-            <button key={t.id} onClick={()=>setTempActiva(t.id)}
-              style={{padding:'3px 9px',borderRadius:12,border:'1px solid var(--bd)',cursor:'pointer',fontSize:10,fontWeight:600,
-                background: tempActiva===t.id ? accentColor : 'var(--card)',
-                color: tempActiva===t.id ? 'white' : 'var(--tx2)'}}>
-              {t.nombre}{t.cerrada?' 🔒':''}
-            </button>
-          ))}
-        </div>
-      )}
+    const champSlot = picks['fin'];
+    const champ = champSlot ? getBracketTeam('fin', champSlot) : null;
 
-      {/* Cargando fixture */}
-      {cargandoFix && (
-        <div style={{textAlign:'center',padding:16,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)',marginBottom:10,fontSize:12}}>
-          ⏳ Cargando fixture...
-        </div>
-      )}
-
-      {/* Sin temporada */}
-      {(tab==='pronosticos'||tab==='predicciones') && !tempActiva && !cargandoFix && (
-        <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)',marginBottom:10}}>
-          <div style={{fontSize:26,marginBottom:6}}>📅</div>
-          <div style={{fontSize:13,fontWeight:600,marginBottom:4}}>Sin fixture disponible</div>
-          <div style={{fontSize:12}}>{isAdmin ? 'Importá desde ⚙️ Admin.' : 'Proximamente se carga el fixture.'}</div>
-        </div>
-      )}
-
-      {/* ═══════════════════════════════════
-          TAB: PRONÓSTICOS — fixture completo
-      ═══════════════════════════════════ */}
-      {tab==='pronosticos' && tempActiva && (
-        <div>
-          {partidos.length === 0 ? (
-            <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}>
-              <div style={{fontSize:26,marginBottom:6}}>⚽</div>
-              <div style={{fontSize:13}}>No hay partidos en esta temporada.</div>
-            </div>
-          ) : fases.filter(f=>porFase[f]).map(fase => (
-            <div key={fase}>
-              <div style={{display:'flex',alignItems:'center',gap:7,margin:'12px 0 7px',padding:'5px 10px',
-                background: fase==='final' ? 'linear-gradient(135deg,#B7770D,#F59E0B)' : 'var(--bg2)',
-                borderRadius:'var(--r)', color: fase==='final' ? 'white' : 'var(--tx)'}}>
-                <span style={{fontSize:12}}>{fase==='final'?'🏆':fase==='semis'?'⚡':fase==='cuartos'?'🎯':'📋'}</span>
-                <span style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{FASE_LABEL[fase]||fase}</span>
-                {FASE_BONUS[fase]>1 && <span style={{marginLeft:'auto',background:'rgba(255,255,255,.25)',borderRadius:7,padding:'1px 6px',fontSize:9,fontWeight:700}}>x{FASE_BONUS[fase]} pts</span>}
+    return (
+      <div>
+        <div style={{overflowX:'auto',borderRadius:'var(--r)',border:'1px solid var(--br)',background:'var(--white)',padding:14}}>
+          <div style={{display:'flex',gap:8,minWidth:750}}>
+            {BRACKET_COLS.map(col => (
+              <div key={col.id} style={{flex:1,minWidth:110}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:9,fontWeight:700,color:'var(--tx3)',textTransform:'uppercase',letterSpacing:1,textAlign:'center',paddingBottom:6,borderBottom:'1.5px solid var(--br)',marginBottom:8}}>{col.label}</div>
+                <div style={{display:'flex',flexDirection:'column',justifyContent:'space-around',minHeight:200}}>
+                  {col.ids.map(mid => matchBox(mid, mid==='fin'))}
+                </div>
               </div>
-              {porFase[fase].map(partido => {
-                const pick      = picks[partido.id];
-                const yaPick    = enviado[partido.id] || (pick && pick.gl !== undefined);
-                const cerrado   = partido.picks_cerrados || partido.estado !== 'programado';
-                const finalizado= partido.estado === 'finalizado';
-                const esFavL    = esFav(partido.local);
-                const esFavV    = esFav(partido.visitante);
+            ))}
+          </div>
+        </div>
+        {champ && (
+          <div style={{marginTop:10,padding:'10px 14px',background:'linear-gradient(90deg,rgba(246,180,14,.15),rgba(246,180,14,.05))',border:'1px solid var(--sun)',borderRadius:'var(--r)',display:'flex',alignItems:'center',gap:10}}>
+            <span style={{fontSize:22}}>🏆</span>
+            <div>
+              <div style={{fontSize:10,color:'var(--tx3)',fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Tu campeón elegido</div>
+              <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700,color:'var(--tx)'}}>{champ}</div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Bracket mobile accordion ──────────────────────────────
+  function renderBracketMobile() {
+    return (
+      <div style={{display:'flex',flexDirection:'column',gap:6}}>
+        {BRACKET_ROUNDS_MOBILE.map(round => {
+          const open = openRounds[round.label] !== false;
+          return (
+            <div key={round.label} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',overflow:'hidden'}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 12px',cursor:'pointer',background:'var(--cel-xl)'}}
+                onClick={()=>setOpenRounds(p=>({...p,[round.label]:!open}))}>
+                <span style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,color:'var(--tx)'}}>{round.label}</span>
+                <div style={{display:'flex',alignItems:'center',gap:6}}>
+                  <span style={{fontSize:10,padding:'2px 7px',borderRadius:10,background:'var(--cel)',color:'white',fontWeight:700}}>{round.pts}</span>
+                  <span style={{fontSize:12,color:'var(--tx3)'}}>{open?'▲':'▼'}</span>
+                </div>
+              </div>
+              {open && round.ids.map(mid => {
+                const t1=getBracketTeam(mid,'t1'), t2=getBracketTeam(mid,'t2');
+                const avail=canPickBracket(mid);
+                const isGuest=!user||user.isGuest;
+                const pk=picks[mid], res=results[mid];
+                function mSty(slot){
+                  const sel=adminMode?res===slot:pk===slot;
+                  const cor=!adminMode&&pk===slot&&res===slot;
+                  const wrg=!adminMode&&pk===slot&&res&&res!==slot;
+                  let bg='transparent',col='var(--tx3)';
+                  if(cor){bg='rgba(39,174,96,.12)';col='var(--green)';}
+                  else if(wrg){bg='rgba(192,57,43,.08)';col='var(--red)';}
+                  else if(sel){bg='var(--cel-xl)';col='var(--cel-d)';}
+                  return{flex:1,padding:'7px 8px',border:'1px solid var(--br)',borderRadius:'var(--rs)',background:bg,color:col,fontSize:10,fontWeight:sel?700:400,cursor:(avail&&!isGuest)?'pointer':'default',opacity:avail?1:.35,textAlign:'center',overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'};
+                }
                 return (
-                  <div key={partido.id} className="card" style={{marginBottom:7,
-                    border:(esFavL||esFavV)?`1.5px solid ${accentColor}55`:yaPick&&!finalizado?'1.5px solid rgba(34,197,94,.4)':'1px solid var(--bd)'}}>
-                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:5}}>
-                      <span style={{fontSize:10,color:'var(--tx3)'}}>
-                        📅 {new Date(partido.fecha).toLocaleString('es-AR',{day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'})}
-                        {partido.jornada?` · Fecha ${partido.jornada}`:''}
-                        {partido.zona?` · ${partido.zona}`:''}
-                      </span>
-                      <div style={{display:'flex',gap:4,alignItems:'center'}}>
-                        {(esFavL||esFavV) && <span style={{fontSize:10,color:accentColor,fontWeight:700}}>★</span>}
-                        <span style={{fontSize:9,fontWeight:600,padding:'2px 6px',borderRadius:7,
-                          background:finalizado?'rgba(34,197,94,.1)':cerrado?'rgba(239,68,68,.08)':'rgba(245,158,11,.1)',
-                          color:finalizado?'var(--green)':cerrado?'var(--red)':'#B7770D'}}>
-                          {finalizado?'✅ Final':cerrado?'🔒 Cerrado':'🟢 Abierto'}
-                        </span>
-                      </div>
-                    </div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:6,alignItems:'center',marginBottom:7}}>
-                      <div style={{textAlign:'right'}}>
-                        {partido.logo_local && <img src={partido.logo_local} alt="" style={{width:20,height:20,objectFit:'contain',marginBottom:2,display:'block',marginLeft:'auto'}} onError={e=>e.target.style.display='none'}/>}
-                        <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:esFavL?accentColor:'var(--tx)'}}>{partido.local}{esFavL?' ★':''}</div>
-                      </div>
-                      <div style={{textAlign:'center',fontSize:11,color:'var(--tx3)',fontWeight:600}}>
-                        {finalizado
-                          ? <span style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:800,color:'var(--tx)'}}>{partido.goles_local} - {partido.goles_visitante}</span>
-                          : 'vs'}
-                      </div>
-                      <div style={{textAlign:'left'}}>
-                        {partido.logo_visitante && <img src={partido.logo_visitante} alt="" style={{width:20,height:20,objectFit:'contain',marginBottom:2,display:'block'}} onError={e=>e.target.style.display='none'}/>}
-                        <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:esFavV?accentColor:'var(--tx)'}}>{esFavV?'★ ':''}{partido.visitante}</div>
-                      </div>
-                    </div>
-                    {finalizado && pick && (
-                      <div style={{textAlign:'center',marginBottom:5,padding:'4px 8px',borderRadius:'var(--r)',background:pick.puntos>0?'rgba(34,197,94,.08)':'rgba(239,68,68,.05)'}}>
-                        <span style={{fontSize:11,color:'var(--tx2)'}}>Tu pick: <b>{pick.gl}-{pick.gv}</b> · </span>
-                        <span style={{fontSize:11,fontWeight:700,color:pick.puntos>=pts_exacto?'var(--green)':pick.puntos>0?'#F59E0B':'var(--red)'}}>
-                          {pick.puntos>=pts_exacto?`🎯 +${pick.puntos} pts (exacto!)`:pick.puntos>0?`✅ +${pick.puntos} pts`:'❌ 0 pts'}
-                        </span>
-                      </div>
-                    )}
-                    {!cerrado && !finalizado && (
-                      <div style={{display:'flex',alignItems:'center',gap:7,justifyContent:'center'}}>
-                        <input type="number" min="0" max="20" placeholder="0" value={pick?.gl??''} onChange={ev=>setPick(partido.id,'gl',ev.target.value)}
-                          style={{width:48,textAlign:'center',padding:'5px 3px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:16,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
-                        <span style={{fontWeight:700,color:'var(--tx2)'}}>-</span>
-                        <input type="number" min="0" max="20" placeholder="0" value={pick?.gv??''} onChange={ev=>setPick(partido.id,'gv',ev.target.value)}
-                          style={{width:48,textAlign:'center',padding:'5px 3px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:16,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
-                        <button onClick={()=>enviarPick(partido)} disabled={enviando||yaPick}
-                          style={{padding:'6px 13px',borderRadius:'var(--r)',border:'none',cursor:yaPick?'default':'pointer',fontSize:12,fontWeight:600,
-                            background:yaPick?'var(--bg2)':'var(--cel)',color:yaPick?'var(--tx3)':'white'}}>
-                          {yaPick?'✅ Guardado':'Guardar'}
-                        </button>
-                      </div>
-                    )}
-                    {cerrado && !finalizado && pick && <div style={{textAlign:'center',fontSize:11,color:'var(--tx2)',padding:'3px 0'}}>Tu pick: <b>{pick.gl}-{pick.gv}</b> · esperando resultado</div>}
-                    {cerrado && !finalizado && !pick && <div style={{textAlign:'center',fontSize:10,color:'var(--tx3)',padding:'3px 0'}}>🔒 Cerrado · no participaste</div>}
+                  <div key={mid} style={{padding:'7px 10px',borderTop:'1px solid var(--br)',display:'flex',alignItems:'center',gap:6}}>
+                    <button style={mSty('t1')} onClick={()=>{if(!avail||isGuest)return;if(adminMode&&isAdmin)saveResult(mid,'t1');else savePick(mid,'t1');}}>{t1.length>14?t1.substring(0,13)+'…':t1}</button>
+                    <span style={{fontSize:9,color:'var(--tx3)',flexShrink:0}}>vs</span>
+                    <button style={mSty('t2')} onClick={()=>{if(!avail||isGuest)return;if(adminMode&&isAdmin)saveResult(mid,'t2');else savePick(mid,'t2');}}>{t2.length>14?t2.substring(0,13)+'…':t2}</button>
                   </div>
                 );
               })}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+    );
+  }
 
-      {/* ═══ TAB: PREDICCIONES ═══ */}
-      {tab==='predicciones' && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>🎯 Tus predicciones</div>
-          {Object.keys(picks).length === 0 ? (
-            <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}>
-              <div style={{fontSize:26,marginBottom:6}}>🎯</div>
-              <div style={{fontSize:13}}>No tenés predicciones guardadas aún.</div>
-              <div style={{fontSize:12,marginTop:4}}>Andá a <b>Pronósticos</b> y elegí tus resultados.</div>
+  // ── TAB: RANKING ──────────────────────────────────────────
+  function renderRanking() {
+    const podium = ranking.slice(0,3);
+    const rest   = ranking.slice(3);
+    const myUid  = user && !user.isGuest ? (user.id||user.email) : null;
+
+    return (
+      <div>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,color:'var(--tx)',textTransform:'uppercase',letterSpacing:1}}>🏅 Ranking La Tribu — 2026</div>
+          {loading && <span style={{fontSize:11,color:'var(--tx3)'}}>Actualizando…</span>}
+          <button onClick={loadRemote} style={{fontSize:11,padding:'4px 12px',borderRadius:20,border:'1.5px solid var(--cel)',background:'transparent',color:'var(--cel)',fontWeight:600}}>↻ Actualizar</button>
+        </div>
+
+        {/* Podio */}
+        {podium.length > 0 && (
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,marginBottom:16}}>
+            {podium.map((u,i) => {
+              const medals = ['🥇','🥈','🥉'];
+              const bgs = ['linear-gradient(135deg,rgba(246,180,14,.2),rgba(246,180,14,.05))','linear-gradient(135deg,rgba(74,144,217,.15),rgba(74,144,217,.04))','linear-gradient(135deg,rgba(192,57,43,.1),rgba(192,57,43,.03))'];
+              const isMe = myUid && u.user_id === myUid;
+              return (
+                <div key={u.user_id} style={{background:bgs[i],border:`2px solid ${isMe?'var(--cel)':'var(--br)'}`,borderRadius:'var(--r)',padding:'12px 10px',textAlign:'center'}}>
+                  <div style={{fontSize:22}}>{medals[i]}</div>
+                  <div style={{width:36,height:36,borderRadius:'50%',background:'var(--cel)',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontWeight:700,fontSize:14,color:'white',margin:'6px auto'}}>
+                    {(u.username||'?')[0].toUpperCase()}
+                  </div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,color:'var(--tx)',marginBottom:2,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.username}</div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700,color:'var(--cel-d)'}}>{u.pts}</div>
+                  <div style={{fontSize:9,color:'var(--tx3)',fontWeight:600}}>PTS</div>
+                  <div style={{fontSize:9,color:'var(--tx3)',marginTop:3}}>{u.cor} ✓ · {u.wrg} ✗</div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Tabla completa */}
+        <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',overflow:'hidden'}}>
+          <div style={{display:'grid',gridTemplateColumns:'32px 1fr 60px 40px 40px',padding:'7px 12px',background:'var(--cel-xl)',borderBottom:'1px solid var(--br)',gap:8}}>
+            {['#','Jugador','Puntos','✓','✗'].map(h=>(
+              <div key={h} style={{fontSize:9,fontWeight:700,color:'var(--tx3)',textTransform:'uppercase',letterSpacing:.5}}>{h}</div>
+            ))}
+          </div>
+          {ranking.length === 0 && (
+            <div style={{padding:'24px 12px',textAlign:'center',color:'var(--tx3)',fontSize:12}}>
+              {sb ? 'Aún no hay participantes. ¡Sé el primero!' : 'Conectá Supabase para ver el ranking global.'}
             </div>
-          ) : partidos.filter(p=>picks[p.id]).map(partido => {
-            const pick = picks[partido.id];
-            const finalizado = partido.estado === 'finalizado';
+          )}
+          {ranking.map((u,i) => {
+            const isMe = myUid && u.user_id === myUid;
             return (
-              <div key={partido.id} className="card" style={{marginBottom:7,display:'flex',alignItems:'center',gap:10}}>
-                <div style={{flex:1}}>
-                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{partido.local} vs {partido.visitante}</div>
-                  <div style={{fontSize:10,color:'var(--tx3)'}}>{new Date(partido.fecha).toLocaleDateString('es-AR')}</div>
+              <div key={u.user_id} style={{display:'grid',gridTemplateColumns:'32px 1fr 60px 40px 40px',padding:'9px 12px',borderBottom:'1px solid var(--br)',background:isMe?'var(--cel-xl)':'transparent',gap:8,alignItems:'center'}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,color:'var(--tx3)'}}>{i+1}</div>
+                <div style={{display:'flex',alignItems:'center',gap:7}}>
+                  <div style={{width:24,height:24,borderRadius:'50%',background:'var(--cel)',display:'flex',alignItems:'center',justifyContent:'center',fontWeight:700,fontSize:10,color:'white',flexShrink:0,fontFamily:'var(--fd)'}}>
+                    {(u.username||'?')[0].toUpperCase()}
+                  </div>
+                  <span style={{fontSize:12,fontWeight:isMe?700:400,color:'var(--tx)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.username}{isMe&&' (vos)'}</span>
                 </div>
-                <div style={{textAlign:'center'}}>
-                  <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:800}}>{pick.gl} - {pick.gv}</div>
-                  {finalizado && <div style={{fontSize:10,fontWeight:700,color:pick.puntos>0?'var(--green)':'var(--red)'}}>{pick.puntos>0?`+${pick.puntos} pts`:'0 pts'}</div>}
-                </div>
+                <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,color:'var(--cel-d)'}}>{u.pts}</div>
+                <div style={{fontSize:11,color:'var(--green)',fontWeight:600}}>{u.cor}</div>
+                <div style={{fontSize:11,color:'var(--red)',fontWeight:600}}>{u.wrg}</div>
               </div>
             );
           })}
         </div>
-      )}
-
-      {/* ═══ TAB: JUGÁ Y GANÁ ═══ */}
-      {tab==='jugagana' && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>🎮 Jugá y Ganá</div>
-          {[
-            {em:'🥇',t:'Premio Semanal',d:'El mejor puntaje de la semana gana membresía premium 30 días',pts:'Top 1 semanal'},
-            {em:'🏆',t:'Campeón de Temporada',d:'El #1 al cierre recibe el badge exclusivo "Campeón" en su perfil',pts:'1er lugar'},
-            {em:'🎯',t:'Pleno de jornada',d:'Acertás todos los resultados de una fecha → mención especial en el portal',pts:'Pleno'},
-            {em:'🔥',t:'Racha de fuego',d:'5 aciertos seguidos desbloquea la insignia "Profeta"',pts:'Racha x5'},
-          ].map((p,i) => (
-            <div key={i} className="card" style={{marginBottom:8,display:'flex',gap:10,alignItems:'flex-start'}}>
-              <span style={{fontSize:24,flexShrink:0}}>{p.em}</span>
-              <div>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:2}}>{p.t}</div>
-                <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.5,marginBottom:4}}>{p.d}</div>
-                <span style={{background:`${accentColor}18`,color:accentColor,padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700}}>{p.pts}</span>
-              </div>
-            </div>
-          ))}
-          <div style={{background:`${accentColor}10`,border:`1.5px solid ${accentColor}33`,borderRadius:'var(--r)',padding:12,marginTop:4,fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>
-            <b>¿Cómo ganar puntos?</b> Exacto = {config.pts_exacto||3} pts · Solo ganador = {config.pts_ganador||1} pt · Bonus final x{config.bonus_final||4}
+        {(!user||user.isGuest) && (
+          <div style={{marginTop:12,padding:'10px 14px',background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--r)',fontSize:12,color:'var(--cel-d)',textAlign:'center',fontWeight:600}}>
+            Iniciá sesión para aparecer en el ranking y guardar tus predicciones 🏆
           </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── TAB: MIS PUNTOS ───────────────────────────────────────
+  function renderMisPuntos() {
+    const allFixtures = Object.values(FIXTURE_DATA).flat();
+    const allBracketIds = [...R16.map(m=>m.id),...Object.keys(BRACKET_TREE)];
+    const myPreds = [
+      ...allFixtures.filter(m=>picks[m.id]).map(m=>({...m,pick:picks[m.id],res:results[m.id],pts:FIXTURE_PTS,type:'fix'})),
+      ...allBracketIds.filter(id=>picks[id]).map(id=>{
+        const t1=getBracketTeam(id,'t1'),t2=getBracketTeam(id,'t2');
+        return{id,h:t1,v:t2,pick:picks[id],res:results[id],pts:BRACKET_PTS[id]||1,type:'brac',f:'Bracket',d:'—'};
+      }),
+    ];
+
+    return (
+      <div>
+        <div style={{...sty.statsRow,gridTemplateColumns:mobile?'repeat(2,1fr)':'repeat(4,1fr)',marginBottom:16}}>
+          <div style={sty.statCard('var(--cel-xl)')}><div style={sty.statLbl()}>Total predicciones</div><div style={sty.statVal()}>{myPreds.length}</div></div>
+          <div style={sty.statCard('var(--cel-xl)')}><div style={sty.statLbl()}>Puntos ganados</div><div style={sty.statVal()}>{st.pts}</div></div>
+          <div style={sty.statCard('rgba(39,174,96,.1)')}><div style={sty.statLbl('var(--green)')}>Correctas</div><div style={sty.statVal('var(--green)')}>{st.cor}</div></div>
+          <div style={sty.statCard('rgba(192,57,43,.08)')}><div style={sty.statLbl('var(--red)')}>Falladas</div><div style={sty.statVal('var(--red)')}>{st.wrg}</div></div>
         </div>
-      )}
 
-      {/* ═══ TAB: ACIERTOS ═══ */}
-      {tab==='aciertos' && (
+        {myPreds.length === 0 ? (
+          <div style={{textAlign:'center',padding:'2.5rem 1rem',color:'var(--tx3)',fontSize:13}}>
+            Todavía no predijiste ningún partido.<br/>Andá a Predecir y elegí tus resultados.
+          </div>
+        ) : (
+          myPreds.map(p => {
+            const cor=p.res&&p.pick===p.res, wrg=p.res&&p.pick!==p.res;
+            const pickLbl=p.pick==='1'?p.h:p.pick==='2'?p.v:p.pick==='t1'?p.h:p.pick==='t2'?p.v:'Empate';
+            return (
+              <div key={p.id} style={{display:'flex',alignItems:'center',gap:10,background:'var(--white)',border:`1px solid ${cor?'var(--green)':wrg?'var(--red)':'var(--br)'}`,borderRadius:'var(--r)',padding:'9px 12px',marginBottom:7}}>
+                <div style={{minWidth:36,height:36,borderRadius:'var(--rs)',background:cor?'rgba(39,174,96,.12)':wrg?'rgba(192,57,43,.08)':'var(--cel-xl)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:cor?'var(--green)':wrg?'var(--red)':'var(--cel-d)'}}>
+                  {p.pick==='X'?'X':pickLbl.substring(0,3).toUpperCase()}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.h} vs {p.v}</div>
+                  <div style={{fontSize:11,color:'var(--tx3)'}}>{p.f} · {p.d} · <span style={{color:cor?'var(--green)':wrg?'var(--red)':'var(--tx3)',fontWeight:600}}>{cor?`+${p.pts}pts ✓`:wrg?'Fallada ✗':'En juego'}</span></div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {myPreds.length > 0 && (
+          <button onClick={()=>{if(window.confirm('¿Borrar todas las predicciones?')){setPicks({});setResults({});localStorage.removeItem('tribu_picks_v2');}}}
+            style={{marginTop:8,fontSize:11,padding:'6px 14px',borderRadius:20,border:'1.5px solid var(--br)',background:'transparent',color:'var(--tx3)',fontWeight:600}}>
+            Borrar todas mis predicciones
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  // ── RENDER PRINCIPAL ──────────────────────────────────────
+  return (
+    <div style={sty.wrap}>
+      {/* Banner imagen */}
+      <div style={{marginBottom:12,borderRadius:'var(--rl)',overflow:'hidden',border:'1.5px solid var(--br)',boxShadow:'var(--sh)'}}>
+        <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/latribupredice.JPG" alt="La Tribu Predice" style={{width:'100%',height:'auto',display:'block'}}/>
+      </div>
+
+      {/* Banner gradiente */}
+      <div style={sty.banner}>
+        <div style={sty.bannerIco}>🏆</div>
         <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>🏅 Ranking — {tempObj?.nombre||'Temporada'}</div>
-          {ranking.length === 0
-            ? <div style={{textAlign:'center',padding:28,color:'var(--tx2)',background:'var(--card)',borderRadius:'var(--r)'}}><div style={{fontSize:26,marginBottom:6}}>📊</div><div>Sin puntos aún en esta temporada.</div></div>
-            : ranking.map((r,i) => (
-              <div key={i} className="card" style={{marginBottom:6,display:'flex',alignItems:'center',gap:10}}>
-                <span style={{fontSize:18,width:24,textAlign:'center',flexShrink:0}}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':`#${r.posicion}`}</span>
-                <div style={{flex:1}}>
-                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700}}>{r.username}</div>
-                  <div style={{fontSize:10,color:'var(--tx3)'}}>{r.aciertos} aciertos · {r.exactos} exactos{r.racha>2?` · 🔥 ${r.racha}`:''}</div>
-                </div>
-                <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:800,color:i===0?'#F59E0B':i===1?'#9CA3AF':i===2?'#B45309':'var(--cel)'}}>{r.puntos} pts</div>
-              </div>
-            ))
-          }
+          <div style={sty.bannerT}>LA TRIBU PREDICE</div>
+          <div style={sty.bannerS}>Temporada 2026 · Predecí, sumá puntos, disputá el ranking</div>
         </div>
-      )}
+        {saving && <span style={{marginLeft:'auto',fontSize:10,color:'rgba(255,255,255,.7)'}}>Guardando…</span>}
+      </div>
 
-      {/* ═══ TAB: QUINIELA ═══ */}
-      {tab==='quiniela' && tempActiva && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>📋 Quiniela Deportiva</div>
-          <div style={{background:'var(--card)',borderRadius:'var(--r)',padding:14,marginBottom:10,fontSize:12,color:'var(--tx2)',lineHeight:1.7}}>
-            Seleccioná el resultado de <b>todos los partidos de la jornada</b> de una sola vez y enviá tu quiniela completa. Quien más acierta gana.
-          </div>
-          {partidos.filter(p=>p.estado==='programado'&&!p.picks_cerrados).length === 0
-            ? <div style={{textAlign:'center',padding:24,color:'var(--tx3)',fontSize:12}}>No hay partidos abiertos para la quiniela en este momento.</div>
-            : partidos.filter(p=>p.estado==='programado'&&!p.picks_cerrados).map(partido => (
-              <div key={partido.id} className="card" style={{marginBottom:7}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr auto auto',gap:6,alignItems:'center'}}>
-                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,textAlign:'right'}}>{partido.local}</div>
-                  <input type="number" min="0" max="20" placeholder="0" value={picks[partido.id]?.gl??''} onChange={ev=>setPick(partido.id,'gl',ev.target.value)}
-                    style={{width:42,textAlign:'center',padding:'4px 2px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:15,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
-                  <input type="number" min="0" max="20" placeholder="0" value={picks[partido.id]?.gv??''} onChange={ev=>setPick(partido.id,'gv',ev.target.value)}
-                    style={{width:42,textAlign:'center',padding:'4px 2px',borderRadius:'var(--r)',border:'1.5px solid var(--bd)',fontFamily:'var(--fd)',fontSize:15,fontWeight:700,background:'var(--bg)',color:'var(--tx)'}}/>
-                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{partido.visitante}</div>
-                  <button onClick={()=>enviarPick(partido)} disabled={enviando||enviado[partido.id]}
-                    style={{padding:'4px 10px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontSize:11,fontWeight:600,
-                      background:enviado[partido.id]?'var(--bg2)':'var(--cel)',color:enviado[partido.id]?'var(--tx3)':'white'}}>
-                    {enviado[partido.id]?'✅':'OK'}
-                  </button>
-                </div>
-              </div>
-            ))
-          }
-        </div>
-      )}
+      {/* Tabs principales */}
+      <div style={sty.tabs}>
+        <button style={sty.tab(tab==='predecir')} onClick={()=>setTab('predecir')}>⚽ Predecir</button>
+        <button style={sty.tab(tab==='ranking')}  onClick={()=>{ setTab('ranking'); if(sb) loadRemote(); }}>🏅 Ranking</button>
+        <button style={sty.tab(tab==='mispuntos')} onClick={()=>setTab('mispuntos')}>⭐ Mis puntos</button>
+        {isAdmin && (
+          <button style={{...sty.tab(adminMode), marginLeft:'auto', background:adminMode?'var(--sun)':undefined, borderColor:adminMode?'var(--sun)':undefined}}
+            onClick={()=>setAdminMode(p=>!p)}>
+            ⚙️ {adminMode?'Admin ON':'Admin'}
+          </button>
+        )}
+      </div>
 
-      {/* ═══ TAB: DESAFÍO ═══ */}
-      {tab==='desafio' && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>⚡ Desafíos Deportivos</div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-            {logros.map(l => {
-              const desbloqueado = misLogros.includes(l.id);
-              return (
-                <div key={l.id} className="card" style={{textAlign:'center',padding:'12px 8px',opacity:desbloqueado?1:.45,
-                  border:desbloqueado?`1.5px solid ${accentColor}55`:'1px solid var(--bd)'}}>
-                  <div style={{fontSize:24,marginBottom:4}}>{l.icono}</div>
-                  <div style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700,marginBottom:2}}>{l.nombre}</div>
-                  <div style={{fontSize:10,color:'var(--tx3)',lineHeight:1.4}}>{l.descripcion}</div>
-                  {desbloqueado && <div style={{fontSize:9,color:accentColor,fontWeight:700,marginTop:3}}>✅ Desbloqueado</div>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Contenido según tab */}
+      {tab==='predecir'  && renderPredecir()}
+      {tab==='ranking'   && renderRanking()}
+      {tab==='mispuntos' && renderMisPuntos()}
 
-      {/* ═══ TAB: MIS EQUIPOS FAVORITOS (acceso rápido desde badge) ═══ */}
-      {tab==='favs' && (
-        <div>
-          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:6}}>★ Mis equipos favoritos</div>
-          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:10,lineHeight:1.6}}>
-            Elegí hasta <b>5 equipos</b>. Sus partidos se resaltan con ★ en Pronósticos y Quiniela.
-          </div>
-          {favEquipos.length > 0 && (
-            <div style={{display:'flex',gap:6,flexWrap:'wrap',marginBottom:12}}>
-              {favEquipos.map(eq => (
-                <div key={eq} style={{display:'flex',alignItems:'center',gap:5,padding:'5px 10px',borderRadius:16,
-                  background:`${accentColor}18`,border:`1.5px solid ${accentColor}44`,fontSize:12,fontWeight:600,color:accentColor}}>
-                  ★ {eq}
-                  <button onClick={()=>toggleFavorito(eq)} style={{background:'none',border:'none',cursor:'pointer',color:accentColor,fontSize:14,padding:0,lineHeight:1}}>×</button>
-                </div>
-              ))}
-            </div>
-          )}
-          <input placeholder="Buscar equipo..." value={buscandoEq} onChange={e=>setBuscandoEq(e.target.value)}
-            style={{width:'100%',padding:'8px 12px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:10}}/>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
-            {equiposFiltrados.map(eq => {
-              const selec = esFav(eq);
-              const lleno = favEquipos.length >= 5 && !selec;
-              return (
-                <button key={eq} onClick={()=>!lleno&&toggleFavorito(eq)} disabled={lleno}
-                  style={{padding:'8px 12px',borderRadius:'var(--r)',border:`1.5px solid ${selec?accentColor:'var(--bd)'}`,cursor:lleno?'not-allowed':'pointer',fontSize:12,fontWeight:selec?700:400,textAlign:'left',
-                    background:selec?`${accentColor}15`:'var(--card)',color:selec?accentColor:'var(--tx)',opacity:lleno?.5:1,display:'flex',alignItems:'center',gap:6}}>
-                  <span style={{fontSize:13}}>{selec?'★':'☆'}</span> {eq}
-                </button>
-              );
-            })}
-          </div>
-          {equiposComp.length === 0 && (
-            <div style={{textAlign:'center',padding:16,color:'var(--tx3)',fontSize:12}}>
-              Seleccioná una competencia para ver sus equipos.
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ═══ TAB: ADMIN ═══ */}
-      {tab==='admin' && isAdmin && (
-        <div>
-          <div style={{background:'rgba(239,68,68,.07)',border:'1px solid rgba(239,68,68,.25)',borderRadius:'var(--r)',padding:'8px 12px',marginBottom:12,fontSize:12,color:'var(--tx2)'}}>
-            ⚙️ <b>Panel Admin</b> — solo vos podés ver esto.
-          </div>
-          <div style={{display:'flex',gap:5,marginBottom:12,flexWrap:'wrap'}}>
-            {[{id:'importar',l:'📥 Importar'},{id:'partidos',l:'➕ Partido'},{id:'resultados',l:'✅ Resultado'},{id:'temporadas',l:'📅 Temporada'},{id:'config',l:'⚙️ Config'}].map(t => (
-              <button key={t.id} onClick={()=>setAdminTab(t.id)}
-                style={{padding:'5px 11px',borderRadius:14,border:'1px solid var(--bd)',cursor:'pointer',fontSize:11,fontWeight:600,
-                  background:adminTab===t.id?'var(--cel)':'var(--card)',color:adminTab===t.id?'white':'var(--tx2)'}}>
-                {t.l}
-              </button>
-            ))}
-          </div>
-
-          {adminTab==='importar' && (
-            <div className="card cp">
-              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:6,color:'var(--green)'}}>📥 Importar fixture</div>
-              {(() => {
-                const cfg = API_COMPS[compObj?.slug];
-                const srcLabel = !cfg ? null : cfg.source === 'fdorg' ? '⚽ football-data.org' : '🇦🇷 RapidAPI (API-Football)';
-                const keyOk = !cfg ? false : cfg.source === 'fdorg'
-                  ? (window.FOOTBALL_DATA_KEY && window.FOOTBALL_DATA_KEY !== 'TU_FOOTBALL_DATA_KEY_AQUI')
-                  : (window.RAPIDAPI_KEY && window.RAPIDAPI_KEY !== 'TU_RAPIDAPI_KEY_AQUI');
-                return (
-                  <>
-                    <div style={{fontSize:12,color:'var(--tx2)',marginBottom:4}}>{compObj?.nombre}</div>
-                    <div style={{fontSize:11,marginBottom:8,display:'flex',alignItems:'center',gap:6}}>
-                      <span style={{color:cfg?'var(--green)':'var(--red)',fontWeight:700}}>{cfg?'✅ Fuente: '+srcLabel:'❌ Sin config'}</span>
-                      {cfg && <span style={{color:keyOk?'var(--green)':'var(--red)',fontWeight:700}}>· API Key: {keyOk?'✅ Configurada':'⚠️ Faltante'}</span>}
-                    </div>
-                    {cfg && !keyOk && (
-                      <div style={{background:'rgba(192,57,43,.08)',border:'1px solid rgba(192,57,43,.2)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:11,color:'#B03020',marginBottom:8}}>
-                        Pegá tu clave de {cfg.source === 'fdorg' ? 'football-data.org en FOOTBALL_DATA_KEY' : 'RapidAPI en RAPIDAPI_KEY'} al inicio del archivo.
-                      </div>
-                    )}
-                    <button onClick={adminImportarFixture} disabled={importando||!cfg||!keyOk}
-                      style={{width:'100%',padding:'10px',borderRadius:'var(--r)',border:'none',fontWeight:700,fontSize:13,cursor:'pointer',background:'var(--green)',color:'white',opacity:importando||!cfg||!keyOk?.5:1,transition:'.15s'}}>
-                      {importando?'⏳ Importando...':cfg?`📥 Importar fixture · ${compObj?.nombre||'competencia'}` : '❌ Sin config de API'}
-                    </button>
-                  </>
-                );
-              })()}
-              {importLog.length > 0 && (
-                <div style={{marginTop:8,background:'var(--bg2)',borderRadius:'var(--r)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
-                  {importLog.map((l,i)=><div key={i} style={{fontSize:11,color:'var(--tx2)',marginBottom:2,fontFamily:'monospace'}}>{l}</div>)}
-                </div>
-              )}
-            </div>
-          )}
-          {adminTab==='partidos' && (
-            <div className="card">
-              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>➕ Nuevo partido</div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}}>
-                <input placeholder="Local" value={formPartido.local} onChange={e=>setFormP(p=>({...p,local:e.target.value}))} style={{padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13}}/>
-                <input placeholder="Visitante" value={formPartido.visitante} onChange={e=>setFormP(p=>({...p,visitante:e.target.value}))} style={{padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13}}/>
-              </div>
-              <input type="datetime-local" value={formPartido.fecha} onChange={e=>setFormP(p=>({...p,fecha:e.target.value}))} style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:8}}/>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8,marginBottom:10}}>
-                <select value={formPartido.fase} onChange={e=>setFormP(p=>({...p,fase:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}>
-                  {fases.map(f=><option key={f} value={f}>{FASE_LABEL[f]||f}</option>)}
-                </select>
-                <input placeholder="Nº Fecha" type="number" value={formPartido.jornada} onChange={e=>setFormP(p=>({...p,jornada:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
-                <input placeholder="Zona" value={formPartido.zona} onChange={e=>setFormP(p=>({...p,zona:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
-              </div>
-              <button onClick={adminCrearPartido} style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'var(--cel)',color:'white',fontWeight:700,fontSize:13}}>➕ Agregar</button>
-              {partidos.length > 0 && (
-                <div style={{marginTop:10}}>
-                  <div style={{fontSize:11,color:'var(--tx3)',marginBottom:5}}>{partidos.length} partidos cargados</div>
-                  {partidos.slice(0,6).map(p=>(
-                    <div key={p.id} style={{fontSize:11,padding:'3px 7px',borderRadius:5,background:'var(--bg2)',marginBottom:3,display:'flex',justifyContent:'space-between'}}>
-                      <span>{p.local} vs {p.visitante}</span>
-                      <span style={{color:p.estado==='finalizado'?'var(--green)':'var(--tx3)'}}>{p.estado}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {adminTab==='resultados' && (
-            <div className="card">
-              <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>✅ Cargar resultado</div>
-
-              {/* Auto-sync desde API */}
-              <button onClick={adminSincronizarResultados} disabled={sincronizando||!tempActiva}
-                style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
-                  background:sincronizando?'#aaa':'#2E6FB5',color:'white',marginBottom:10}}>
-                {sincronizando?'⏳ Sincronizando...':'🔄 Auto-sincronizar resultados desde API'}
-              </button>
-              {sincrLog.length > 0 && (
-                <div style={{marginBottom:10,background:'rgba(46,111,181,.07)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:100,overflowY:'auto'}}>
-                  {sincrLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
-                </div>
-              )}
-
-              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8,textAlign:'center'}}>— o cargá manualmente —</div>
-              <select value={formResultado.partido_id} onChange={e=>setFormR(r=>({...r,partido_id:e.target.value}))}
-                style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12,marginBottom:8}}>
-                <option value="">— Elegí el partido —</option>
-                {partidos.filter(p=>p.estado!=='finalizado').map(p=>(
-                  <option key={p.id} value={p.id}>{p.local} vs {p.visitante} · {new Date(p.fecha).toLocaleDateString('es-AR')}</option>
-                ))}
-              </select>
-              <div style={{display:'grid',gridTemplateColumns:'1fr auto 1fr',gap:8,alignItems:'center',marginBottom:10}}>
-                <input type="number" min="0" max="20" placeholder="Local" value={formResultado.gl} onChange={e=>setFormR(r=>({...r,gl:e.target.value}))} style={{padding:'8px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:18,fontWeight:700,textAlign:'center'}}/>
-                <span style={{textAlign:'center',fontWeight:700,color:'var(--tx2)'}}>-</span>
-                <input type="number" min="0" max="20" placeholder="Visit." value={formResultado.gv} onChange={e=>setFormR(r=>({...r,gv:e.target.value}))} style={{padding:'8px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:18,fontWeight:700,textAlign:'center'}}/>
-              </div>
-              <button onClick={adminCargarResultado} style={{width:'100%',padding:'10px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'#22C55E',color:'white',fontWeight:700,fontSize:13}}>✅ Guardar y calcular puntos</button>
-            </div>
-          )}
-          {adminTab==='temporadas' && (
-            <div>
-              <div className="card" style={{marginBottom:8,border:'1.5px solid rgba(34,197,94,.3)'}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:5,color:'var(--green)'}}>📥 Fixture automático</div>
-
-                {/* Botón principal: importar desde api-football */}
-                <button onClick={adminImportarFixture} disabled={importando||buscandoIA||!API_COMPS[compObj?.slug]}
-                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,background:'var(--green)',color:'white',marginBottom:6}}>
-                  {importando?'⏳ Importando...':'📥 Importar fixture · '+(compObj?.nombre||'competencia')}
-                </button>
-
-                {/* Botón: sincronizar resultados terminados */}
-                <button onClick={adminSincronizarResultados} disabled={sincronizando||importando||buscandoIA||!tempActiva}
-                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
-                    background:sincronizando?'#aaa':'#2E6FB5',color:'white',marginBottom:6}}>
-                  {sincronizando?'⏳ Sincronizando...':'🔄 Sincronizar resultados (auto-puntos)'}
-                </button>
-
-                {/* Botón fallback: Claude IA busca en la web */}
-                <button onClick={buscarFixtureConIA} disabled={buscandoIA||importando||sincronizando}
-                  style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',fontWeight:700,fontSize:12,
-                    background:buscandoIA?'#aaa':'#B7770D',color:'white',marginBottom:8}}>
-                  {buscandoIA?'🤖 Claude buscando...':'🤖 Buscar con IA (si la API falla)'}
-                </button>
-                <div style={{fontSize:10,color:'var(--tx3)',lineHeight:1.5}}>
-                  💡 <b>Importar:</b> trae el fixture completo de la temporada.<br/>
-                  💡 <b>Sincronizar:</b> actualiza resultados de partidos terminados y calcula puntos automáticamente.<br/>
-                  💡 <b>Buscar con IA:</b> Claude busca en la web si la API no responde.
-                </div>
-
-                {/* Log de importación */}
-                {importLog.length > 0 && (
-                  <div style={{marginTop:8,background:'var(--bg2)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
-                    {importLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
-                  </div>
-                )}
-
-                {/* Log de sincronización */}
-                {sincrLog.length > 0 && (
-                  <div style={{marginTop:8,background:'rgba(46,111,181,.07)',borderRadius:'var(--rs)',padding:'8px 10px',maxHeight:120,overflowY:'auto'}}>
-                    {sincrLog.map((l,i)=><div key={i} style={{fontSize:10,color:'var(--tx2)',marginBottom:2}}>{l}</div>)}
-                  </div>
-                )}
-              </div>
-              <div className="card">
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>📅 Crear temporada manual</div>
-                <input placeholder="Nombre (ej: Apertura 2026)" value={formTemp.nombre} onChange={e=>setFormT(t=>({...t,nombre:e.target.value}))}
-                  style={{width:'100%',padding:'7px 10px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:13,marginBottom:8}}/>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:10}}>
-                  <input type="date" value={formTemp.fecha_inicio} onChange={e=>setFormT(t=>({...t,fecha_inicio:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
-                  <input type="date" value={formTemp.fecha_fin} onChange={e=>setFormT(t=>({...t,fecha_fin:e.target.value}))} style={{padding:'7px',borderRadius:'var(--r)',border:'1px solid var(--bd)',background:'var(--bg)',color:'var(--tx)',fontSize:12}}/>
-                </div>
-                <button onClick={adminCrearTemp} style={{width:'100%',padding:'9px',borderRadius:'var(--r)',border:'none',cursor:'pointer',background:'var(--cel)',color:'white',fontWeight:700,fontSize:13}}>📅 Crear vacía</button>
-              </div>
-              {temporadas.length > 0 && (
-                <div className="card" style={{marginTop:8}}>
-                  {temporadas.map(t=>(
-                    <div key={t.id} style={{padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-                      <span style={{fontSize:12,fontWeight:600}}>{t.nombre}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:t.activa?'var(--green)':t.cerrada?'var(--red)':'var(--tx3)'}}>{t.activa?'✅':t.cerrada?'🔒':'⏸'}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-          {adminTab==='config' && (
-            <div>
-              <div className="card cp" style={{marginBottom:10}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>🔑 Estado de API Keys</div>
-                {[
-                  { label:'football-data.org', key:'FOOTBALL_DATA_KEY', placeholder:'TU_FOOTBALL_DATA_KEY_AQUI', link:'https://www.football-data.org/client/register', tip:'Para Champions, La Liga, Premier, etc.' },
-                  { label:'RapidAPI (API-Football)', key:'RAPIDAPI_KEY', placeholder:'TU_RAPIDAPI_KEY_AQUI', link:'https://rapidapi.com/api-sports/api/api-football', tip:'Para Liga Prof., Libertadores, Copa Argentina' },
-                ].map(({label, key, placeholder, link, tip}) => {
-                  const val = window[key];
-                  const ok = val && val !== placeholder;
-                  return (
-                    <div key={key} style={{borderRadius:'var(--rs)',border:`1.5px solid ${ok?'rgba(39,174,96,.3)':'rgba(192,57,43,.25)'}`,background:ok?'rgba(39,174,96,.05)':'rgba(192,57,43,.05)',padding:'9px 12px',marginBottom:8}}>
-                      <div style={{display:'flex',alignItems:'center',gap:7,marginBottom:3}}>
-                        <span style={{fontSize:13}}>{ok?'✅':'❌'}</span>
-                        <span style={{fontWeight:700,fontSize:12,color:ok?'#1E8449':'#B03020'}}>{label}</span>
-                      </div>
-                      <div style={{fontSize:11,color:'var(--tx3)',marginBottom:ok?0:6}}>{tip}</div>
-                      {!ok && (
-                        <div style={{fontSize:11,color:'#B03020'}}>
-                          Abrí el archivo HTML, buscá <code style={{background:'rgba(192,57,43,.1)',borderRadius:3,padding:'0 3px'}}>window.{key}</code> al inicio y pegá tu clave. &nbsp;
-                          <a href={link} target="_blank" rel="noreferrer" style={{color:'var(--cel)',fontWeight:600}}>Obtener clave →</a>
-                          {key==='RAPIDAPI_KEY' && <div style={{marginTop:4,fontWeight:600}}>⚠️ En RapidAPI también tenés que hacer clic en "Subscribe" en la página de API-Football aunque sea el plan Free.</div>}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="card">
-                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8}}>⚙️ Config del Prode</div>
-                <div style={{fontSize:11,color:'var(--tx3)',marginBottom:8}}>Editá en Supabase → Table Editor → prode_config → campo "valor".</div>
-                {Object.entries(config).map(([k,v])=>(
-                  <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'5px 8px',borderRadius:5,background:'var(--bg2)',marginBottom:3}}>
-                    <span style={{fontSize:11,color:'var(--tx2)'}}>{k}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:'var(--cel)'}}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
+      {/* Info pie */}
+      <div style={{marginTop:20,padding:'10px 14px',background:'var(--cel-xl)',borderRadius:'var(--r)',fontSize:11,color:'var(--tx3)',lineHeight:1.6}}>
+        <strong style={{color:'var(--cel-d)'}}>Cómo jugar:</strong> Predecí el resultado de cada partido (1=local · X=empate · 2=visita) y elegí el campeón en el cuadro eliminatorio.
+        Cada acierto suma {FIXTURE_PTS} puntos (fixture) o 1/2/4/8 puntos según la ronda del bracket.
+        {(!user||user.isGuest) && <span style={{color:'var(--cel-d)',fontWeight:600}}> Iniciá sesión para guardar tus picks y aparecer en el ranking.</span>}
+      </div>
     </div>
   );
 }
+
 
 
 /* ══════ COPA PAGE ══════ */
