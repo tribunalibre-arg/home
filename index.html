@@ -1003,6 +1003,59 @@ const STATIC_POLLS = [
   {id:1,q:'¿Fue penal el derribo de Almada en el Superclásico?',opts:['Sí, penal claro','No era nada','Muy dudoso'],vs:[1240,880,420]},
   {id:2,q:'¿Argentina llega al Mundial 2026 como favorita?',opts:['Somos candidatos','Depende del fixture','No al nivel'],vs:[3100,1800,600]},
 ];
+const VAR_JUGADAS = [
+  {id:'v1',sport:'Fútbol',em:'⚽',titulo:'¿Fue penal el derribo de Almada en el Superclásico?',
+   desc:'Minuto 78. River 1-0 Boca. Almada recibe un golpe en el área de Racing. El árbitro no cobró pero el VAR revisó durante 4 minutos.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Fue penal?',opA:'Sí, penal claro',opB:'No, simuló',
+   votosA:1240,votosB:480,fecha:'Hace 2 días',competencia:'Liga Profesional · Fecha 18',
+   comentarios:[
+     {id:1,u:'GonzaB',av:'G',col:'#E8262A',texto:'Se lo comen de frente, penal clarísimo. El árbitro estaba vendado.',likes:34,ts:'Hace 1d'},
+     {id:2,u:'Racing_Fan',av:'R',col:'#4A90D9',texto:'Almada buscó el contacto, típica simulación. Bien el árbitro.',likes:18,ts:'Hace 1d'},
+     {id:3,u:'ProfeArbitro',av:'P',col:'#16A34A',texto:'Por reglamento, el contacto existió. Hay que cobrar. El VAR debería haberlo cambiado.',likes:51,ts:'Hace 18h'},
+   ]},
+  {id:'v2',sport:'Rugby',em:'🏉',titulo:'Try de Los Pumas: ¿apoyó antes del banderín?',
+   desc:'Minuto 65. Pumas vs All Blacks. Matera llega al ingoal pero el banderín estaba justo en el límite. La TMO revisó 3 minutos.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Era try válido?',opA:'Try válido',opB:'Fue touch antes',
+   votosA:890,votosB:340,fecha:'Hace 3 días',competencia:'Rugby Championship · Test Match',
+   comentarios:[
+     {id:1,u:'LosPumas10',av:'L',col:'#75BF46',texto:'La imagen aérea lo muestra apoyando dentro. Try incuestionable.',likes:42,ts:'Hace 2d'},
+     {id:2,u:'AllBlacksFan',av:'A',col:'#222',texto:'El pie rozó la línea primero. El TMO no se tomó suficiente tiempo.',likes:15,ts:'Hace 2d'},
+   ]},
+  {id:'v3',sport:'Tenis',em:'🎾',titulo:'¿Entró la pelota de Cerúndolo en el match point?',
+   desc:'Set 3, 6-5, 40-40. La pelota de Cerúndolo pica muy cerca de la línea. Nadal pidió Hawkeye. La diferencia fue de 2mm según el sistema.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Entró la pelota?',opA:'Entró, era buena',opB:'Salió, punto de Nadal',
+   votosA:567,votosB:598,fecha:'Hace 1 semana',competencia:'Masters Madrid · Semifinal',
+   comentarios:[
+     {id:1,u:'TenisARG',av:'T',col:'#F59E0B',texto:'El Hawkeye dijo que entró. No hay nada más que discutir.',likes:28,ts:'Hace 5d'},
+   ]},
+  {id:'v4',sport:'Básquet',em:'🏀',titulo:'¿Doble falta en los libres finales de la Liga?',
+   desc:'Último cuarto, 78-77. Vildoza va a los libres para ganar el partido. El árbitro pita doble falta. Los rivales reclaman que no era foul.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Fue falta real?',opA:'Falta clara',opB:'Sin contacto, mal cobrado',
+   votosA:723,votosB:201,fecha:'Hace 5 días',competencia:'Liga Nacional · Final G4',
+   comentarios:[
+     {id:1,u:'Vildoza_Fan',av:'V',col:'#E8262A',texto:'Lleva el brazo al cuerpo, falta obvia. Quieren sacarle el mérito a Obra.',likes:67,ts:'Hace 4d'},
+     {id:2,u:'SanLorenzo',av:'S',col:'#0057A8',texto:'No hubo contacto real, el pie ya estaba en el aire cuando llegó la defensa.',likes:29,ts:'Hace 4d'},
+   ]},
+  {id:'v5',sport:'Hockey',em:'🏑',titulo:'Stick alto o jugada limpia de Las Leonas?',
+   desc:'Segunda mitad. Argentina ataca en el círculo. La capitana eleva el stick por encima de la cadera al intentar el desvío. El árbitro cobra stick alto.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Fue stick alto?',opA:'Sí, correcto el cobro',opB:'No, jugada limpia',
+   votosA:234,votosB:412,fecha:'Hace 6 días',competencia:'Pro League · vs Países Bajos',
+   comentarios:[]},
+  {id:'v6',sport:'Fórmula 1',em:'🏎️',titulo:'¿Colapinto cortó chicane deliberadamente en Mónaco?',
+   desc:'Vuelta 48. Colapinto corta la chicane de la Piscina al adelantar. Los comisarios debaten si fue intencional o para evitar un accidente.',
+   videoUrl:'https://www.youtube.com/embed/dQw4w9WgXcQ',
+   pregunta:'¿Debió recibir penalización?',opA:'Sí, 5 segundos',opB:'No, fue defensivo',
+   votosA:445,votosB:1102,fecha:'Hace 4 días',competencia:'F1 Mónaco · Carrera',
+   comentarios:[
+     {id:1,u:'ColaAR',av:'C',col:'#FF4500',texto:'Estaba evitando al Ferrari que frenó de golpe. No había otra salida.',likes:89,ts:'Hace 3d'},
+     {id:2,u:'F1Purista',av:'F',col:'#888',texto:'El reglamento es claro: si cortás la chicane, devolvés la posición o recibís penalización.',likes:31,ts:'Hace 3d'},
+   ]},
+];
 const TICKER_D = [
   {l:'RIVER',t:"2-1 Racing · 67'"},{l:'PUMAS',t:'28-20 All Blacks'},
   {l:'COLAPINTO',t:'lidera libres Mónaco'},{l:'CERÚNDOLO',t:'semis Madrid'},
@@ -2875,6 +2928,451 @@ function DebatesTab({user,addToast}){
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
+// EL VAR — Jugadas polémicas · Votación · Veredicto · Ranking
+// ══════════════════════════════════════════════════════════════
+const DEPORTES_FILTER = ['Todos','Fútbol','Rugby','Tenis','Básquet','Hockey','Fórmula 1'];
+const VERDICT_MIN_VOTES = 200; // umbral para mostrar veredicto
+
+function VarPage({ user, addToast }) {
+  const sb     = window.__supabase;
+  const isGuest = !window.__supabaseUser;
+
+  // ── estado principal ──────────────────────────────────────
+  const [jugadas,   setJugadas]   = useState(() => {
+    // merge con votos guardados en localStorage
+    const saved = (() => { try { return JSON.parse(localStorage.getItem('tl_var_votos')||'{}'); } catch(e){ return {}; } })();
+    return VAR_JUGADAS.map(j => ({
+      ...j,
+      votosA: (saved[j.id]?.votosA ?? j.votosA),
+      votosB: (saved[j.id]?.votosB ?? j.votosB),
+      comentarios: [...j.comentarios],
+    }));
+  });
+  const [miVoto,    setMiVoto]    = useState(() => { try { return JSON.parse(localStorage.getItem('tl_var_mivoto')||'{}'); } catch(e){ return {}; } });
+  const [selId,     setSelId]     = useState(null);
+  const [filtro,    setFiltro]    = useState('Todos');
+  const [sort,      setSort]      = useState('recientes');  // recientes | votos | sinresolver | veredicto
+  const [comentando,setComentando]= useState({});           // {[jugadaId]: texto}
+  const [showSubir, setShowSubir] = useState(false);
+  const [nueva,     setNueva]     = useState({titulo:'',deporte:'Fútbol',desc:'',pregunta:'',opA:'',opB:'',videoUrl:''});
+  const [subiendoV, setSubiendoV] = useState(false);
+
+  const selJugada = jugadas.find(j => j.id === selId);
+
+  // ── persistir votos en localStorage ──────────────────────
+  function persistVotos(jugadasArr) {
+    const map = {};
+    jugadasArr.forEach(j => { map[j.id] = { votosA: j.votosA, votosB: j.votosB }; });
+    try { localStorage.setItem('tl_var_votos', JSON.stringify(map)); } catch(e) {}
+  }
+
+  // ── votar ─────────────────────────────────────────────────
+  async function votar(jugadaId, opcion) { // opcion: 'A' | 'B'
+    if (miVoto[jugadaId]) { addToast({msg:'Ya votaste en esta jugada', type:'warn'}); return; }
+    const nuevosMiVoto = { ...miVoto, [jugadaId]: opcion };
+    setMiVoto(nuevosMiVoto);
+    try { localStorage.setItem('tl_var_mivoto', JSON.stringify(nuevosMiVoto)); } catch(e) {}
+
+    const updated = jugadas.map(j => {
+      if (j.id !== jugadaId) return j;
+      return { ...j, votosA: j.votosA + (opcion==='A'?1:0), votosB: j.votosB + (opcion==='B'?1:0) };
+    });
+    setJugadas(updated);
+    persistVotos(updated);
+
+    if (sb) {
+      await sb.from('var_votos').insert({ jugada_id: jugadaId, opcion, user_id: window.__supabaseUser?.id || 'guest' });
+    }
+    addToast({ msg: opcion==='A' ? '✅ Votaste: "'+jugadas.find(j=>j.id===jugadaId)?.opA+'"' : '✅ Votaste: "'+jugadas.find(j=>j.id===jugadaId)?.opB+'"', type:'ok' });
+  }
+
+  // ── comentar ──────────────────────────────────────────────
+  async function enviarComentario(jugadaId) {
+    const txt = (comentando[jugadaId]||'').trim();
+    if (!txt) return;
+    if (isGuest) { addToast({msg:'Iniciá sesión para comentar',type:'warn'}); return; }
+    const nombre = window.__supabaseUser?.displayName || 'Usuario';
+    const newCom = { id: Date.now(), u: nombre, av: nombre[0].toUpperCase(), col:'#4A90D9', texto: txt, likes:0, ts:'ahora' };
+    setJugadas(prev => prev.map(j => j.id!==jugadaId ? j : {...j, comentarios:[...j.comentarios, newCom]}));
+    setComentando(prev => ({...prev, [jugadaId]:''}));
+    if (sb) await sb.from('var_comentarios').insert({ jugada_id:jugadaId, user:nombre, texto:txt });
+    addToast({msg:'💬 Comentario publicado', type:'ok'});
+  }
+
+  // ── subir nueva jugada ────────────────────────────────────
+  async function subirJugada() {
+    if (!nueva.titulo || !nueva.opA || !nueva.opB) { addToast({msg:'Completá título y opciones', type:'warn'}); return; }
+    setSubiendoV(true);
+    const deporteData = DEPORTES_FILTER.slice(1).find(d=>d===nueva.deporte) || 'Fútbol';
+    const emMap = {'Fútbol':'⚽','Rugby':'🏉','Tenis':'🎾','Básquet':'🏀','Hockey':'🏑','Fórmula 1':'🏎️'};
+    const j = {
+      id: 'v'+Date.now(), sport:deporteData, em:emMap[deporteData]||'⚽',
+      titulo:nueva.titulo, desc:nueva.desc, videoUrl:nueva.videoUrl||'',
+      pregunta:nueva.pregunta||'¿Cuál es tu veredicto?', opA:nueva.opA, opB:nueva.opB,
+      votosA:0, votosB:0, fecha:'Ahora', competencia:'Subido por la comunidad', comentarios:[],
+    };
+    if (sb) {
+      const { data } = await sb.from('var_jugadas').insert({...j, user: window.__supabaseUser?.displayName||'anon'}).select().single();
+      if (data) j.id = data.id;
+    }
+    setJugadas(prev => [j, ...prev]);
+    setNueva({titulo:'',deporte:'Fútbol',desc:'',pregunta:'',opA:'',opB:'',videoUrl:''});
+    setShowSubir(false);
+    setSubiendoV(false);
+    setSelId(j.id);
+    addToast({msg:'📺 Jugada subida al VAR!', type:'ok'});
+  }
+
+  // ── likeComentario ────────────────────────────────────────
+  function likeComentario(jugadaId, comId) {
+    setJugadas(prev => prev.map(j => j.id!==jugadaId ? j : {
+      ...j, comentarios: j.comentarios.map(c => c.id!==comId ? c : {...c, likes:(c.likes||0)+1})
+    }));
+  }
+
+  // ── veredicto ─────────────────────────────────────────────
+  function getVeredicto(j) {
+    const total = j.votosA + j.votosB;
+    if (total < VERDICT_MIN_VOTES) return null;
+    const pct = j.votosA / total;
+    if (pct >= 0.7) return { texto: j.opA, icon:'✅', color:'var(--green,#16A34A)', fuerte:true };
+    if (pct <= 0.3) return { texto: j.opB, icon:'❌', color:'var(--red)', fuerte:true };
+    if (pct >= 0.55) return { texto: j.opA+' (ajustado)', icon:'⚖️', color:'#F59E0B', fuerte:false };
+    if (pct <= 0.45) return { texto: j.opB+' (ajustado)', icon:'⚖️', color:'#F59E0B', fuerte:false };
+    return { texto:'Dividido — sin consenso', icon:'⚖️', color:'#888', fuerte:false };
+  }
+
+  // ── filtrar y ordenar ─────────────────────────────────────
+  const jugadasFiltradas = jugadas
+    .filter(j => filtro==='Todos' || j.sport===filtro)
+    .sort((a,b) => {
+      if (sort==='votos')       return (b.votosA+b.votosB) - (a.votosA+a.votosB);
+      if (sort==='sinresolver') return getVeredicto(a)!==null ? 1 : -1;
+      if (sort==='veredicto')   return getVeredicto(b)!==null ? -1 : 1;
+      return 0; // recientes: orden natural
+    });
+
+  // ── ranking top 3 ─────────────────────────────────────────
+  const ranking = [...jugadas].sort((a,b)=>(b.votosA+b.votosB)-(a.votosA+a.votosB)).slice(0,3);
+
+  // ── helpers UI ────────────────────────────────────────────
+  const pctA = j => { const t=j.votosA+j.votosB; return t?Math.round(j.votosA/t*100):50; };
+  const fmtV = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v;
+  const sportColor = s => ({Fútbol:'#E8262A',Rugby:'#16A34A',Tenis:'#F59E0B',Básquet:'#0057A8','Hockey':'#7C3AED','Fórmula 1':'#FF4500'}[s]||'#888');
+
+  // ─────────────────────────────────────────────────────────
+  return (
+    <div>
+
+      {/* HEADER */}
+      <div style={{background:'linear-gradient(135deg,#1A0A0A,#3D0000,var(--red))',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:0,right:0,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.06)',transform:'translate(50px,-50px)'}}/>
+        <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>📺</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700}}>El VAR</div>
+          <div style={{fontSize:11,opacity:.8}}>La comunidad decide — {jugadas.length} jugadas · {jugadas.reduce((s,j)=>s+j.votosA+j.votosB,0).toLocaleString('es-AR')} votos totales</div>
+        </div>
+        <button className="btn btn-sm" style={{background:'rgba(255,255,255,.15)',border:'1.5px solid rgba(255,255,255,.4)',color:'white',flexShrink:0,borderRadius:20}}
+          onClick={()=>setShowSubir(true)}>+ Subir jugada</button>
+      </div>
+
+      {/* FILTROS DEPORTE */}
+      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4,marginBottom:10}}>
+        {DEPORTES_FILTER.map(d=>(
+          <button key={d} onClick={()=>setFiltro(d)}
+            style={{padding:'4px 12px',borderRadius:20,border:'1.5px solid',fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,transition:'.15s',
+              background: filtro===d?(d==='Todos'?'var(--red)':sportColor(d)):'var(--white)',
+              borderColor: filtro===d?(d==='Todos'?'var(--red)':sportColor(d)):'var(--br)',
+              color: filtro===d?'white':'var(--tx2)'}}>
+            {d}
+          </button>
+        ))}
+      </div>
+
+      {/* SORT TABS */}
+      <div style={{display:'flex',background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',marginBottom:14,overflow:'hidden'}}>
+        {[{id:'recientes',l:'Recientes'},{id:'votos',l:'Más votadas'},{id:'sinresolver',l:'Sin resolver'},{id:'veredicto',l:'Con veredicto'}].map(t=>(
+          <div key={t.id} onClick={()=>setSort(t.id)}
+            style={{flex:1,padding:'6px 0',textAlign:'center',cursor:'pointer',fontSize:11,fontWeight:700,
+              borderBottom:sort===t.id?'2.5px solid var(--red)':'2.5px solid transparent',
+              color:sort===t.id?'var(--red)':'var(--tx3)',transition:'.15s'}}>
+            {t.l}
+          </div>
+        ))}
+      </div>
+
+      {/* MODAL DETALLE */}
+      {selJugada && (
+        <div style={{background:'var(--white)',border:'2px solid var(--red)',borderRadius:'var(--rl)',padding:'16px',marginBottom:16,position:'relative'}}>
+          <button onClick={()=>setSelId(null)} style={{position:'absolute',top:10,right:12,background:'none',border:'none',fontSize:18,cursor:'pointer',color:'var(--tx3)'}}>✕</button>
+
+          {/* Sport tag + titulo */}
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+            <span style={{background:sportColor(selJugada.sport),color:'white',borderRadius:20,padding:'2px 10px',fontSize:10,fontWeight:700}}>{selJugada.em} {selJugada.sport}</span>
+            <span style={{fontSize:10,color:'var(--tx3)'}}>{selJugada.fecha} · {selJugada.competencia}</span>
+          </div>
+          <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700,marginBottom:6,lineHeight:1.3}}>{selJugada.titulo}</div>
+          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:12,lineHeight:1.5}}>{selJugada.desc}</div>
+
+          {/* Video embed */}
+          {selJugada.videoUrl && (
+            <div style={{background:'#000',borderRadius:'var(--r)',overflow:'hidden',marginBottom:14,aspectRatio:'16/9'}}>
+              <iframe width="100%" height="100%" src={selJugada.videoUrl+'?autoplay=0'} frameBorder="0" allow="encrypted-media" allowFullScreen style={{display:'block'}}/>
+            </div>
+          )}
+
+          {/* Votación */}
+          <div style={{background:'var(--cel-xl)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:10}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10,textAlign:'center'}}>{selJugada.pregunta}</div>
+            {!miVoto[selJugada.id] ? (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+                <button onClick={()=>votar(selJugada.id,'A')}
+                  style={{background:'#16A34A',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 8px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                  ✅ {selJugada.opA}
+                </button>
+                <button onClick={()=>votar(selJugada.id,'B')}
+                  style={{background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 8px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                  ❌ {selJugada.opB}
+                </button>
+              </div>
+            ) : (
+              <div style={{textAlign:'center',fontSize:12,color:'var(--tx2)',marginBottom:6}}>
+                Tu voto: <strong>{miVoto[selJugada.id]==='A'?selJugada.opA:selJugada.opB}</strong>
+              </div>
+            )}
+          </div>
+
+          {/* Barra de resultado */}
+          {(miVoto[selJugada.id] || (selJugada.votosA+selJugada.votosB)>0) && (() => {
+            const total = selJugada.votosA+selJugada.votosB;
+            const pa = pctA(selJugada);
+            return (
+              <div style={{marginBottom:12}}>
+                <div style={{display:'flex',borderRadius:8,overflow:'hidden',height:28,marginBottom:4}}>
+                  <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white',transition:'width .5s'}}>{pa}%</div>
+                  <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white'}}>{100-pa}%</div>
+                </div>
+                <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--tx3)'}}>
+                  <span>{selJugada.opA} · {fmtV(selJugada.votosA)} votos</span>
+                  <span>{fmtV(total)} totales</span>
+                  <span>{selJugada.opB} · {fmtV(selJugada.votosB)} votos</span>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Veredicto */}
+          {(() => {
+            const v = getVeredicto(selJugada);
+            if (!v) {
+              const faltan = VERDICT_MIN_VOTES - (selJugada.votosA+selJugada.votosB);
+              return (
+                <div style={{background:'var(--cel-xl)',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:12,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>
+                  ⏳ Faltan {faltan > 0 ? faltan.toLocaleString('es-AR') : 0} votos para el veredicto de la comunidad
+                </div>
+              );
+            }
+            return (
+              <div style={{background:v.fuerte?'rgba(22,163,74,.1)':'rgba(245,158,11,.1)',border:`1.5px solid ${v.color}`,borderRadius:'var(--r)',padding:'10px 14px',marginBottom:12,textAlign:'center'}}>
+                <div style={{fontSize:22,marginBottom:2}}>{v.icon}</div>
+                <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,color:v.color}}>Veredicto de la comunidad</div>
+                <div style={{fontSize:13,fontWeight:600,marginTop:3}}>{v.texto}</div>
+              </div>
+            );
+          })()}
+
+          {/* Comentarios */}
+          <div style={{borderTop:'1px solid var(--br)',paddingTop:12}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>💬 Comentarios ({selJugada.comentarios.length})</div>
+            {selJugada.comentarios.map(c=>(
+              <div key={c.id} style={{display:'flex',gap:8,marginBottom:12,alignItems:'flex-start'}}>
+                <div style={{width:28,height:28,borderRadius:'50%',background:c.col||'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white',fontFamily:'var(--fd)'}}>{c.av}</div>
+                <div style={{flex:1,background:'var(--bg)',borderRadius:'var(--rs)',padding:'8px 10px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                    <span style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700}}>{c.u}</span>
+                    <span style={{fontSize:10,color:'var(--tx3)'}}>{c.ts}</span>
+                  </div>
+                  <div style={{fontSize:12,color:'var(--tx)',lineHeight:1.4}}>{c.texto}</div>
+                  <button onClick={()=>likeComentario(selJugada.id, c.id)}
+                    style={{background:'none',border:'none',fontSize:11,color:'var(--tx3)',cursor:'pointer',marginTop:4,padding:0}}>
+                    🔥 {c.likes||0}
+                  </button>
+                </div>
+              </div>
+            ))}
+            {selJugada.comentarios.length === 0 && (
+              <div style={{textAlign:'center',fontSize:12,color:'var(--tx3)',padding:'12px 0'}}>Sé el primero en opinar sobre esta jugada</div>
+            )}
+            {/* Input comentario */}
+            <div style={{display:'flex',gap:8,marginTop:8}}>
+              <input
+                placeholder={isGuest ? 'Iniciá sesión para comentar' : 'Tu opinión sobre la jugada...'}
+                disabled={isGuest}
+                value={comentando[selJugada.id]||''}
+                onChange={e=>setComentando(prev=>({...prev,[selJugada.id]:e.target.value}))}
+                onKeyDown={e=>e.key==='Enter'&&enviarComentario(selJugada.id)}
+                style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,background:isGuest?'var(--bg)':'var(--white)'}}
+                maxLength={280}
+              />
+              <button onClick={()=>enviarComentario(selJugada.id)} disabled={isGuest}
+                style={{background:'var(--red)',border:'none',borderRadius:'var(--rs)',padding:'0 12px',color:'white',cursor:isGuest?'not-allowed':'pointer',opacity:isGuest?.5:1}}>
+                <Ic.Send style={{width:13,height:13}}/>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FEED DE JUGADAS */}
+      <div style={{display:'grid',gap:10,marginBottom:18}}>
+        {jugadasFiltradas.map(j=>{
+          const total = j.votosA+j.votosB;
+          const pa    = pctA(j);
+          const veredicto = getVeredicto(j);
+          const yaVote    = miVoto[j.id];
+          const isOpen    = selId===j.id;
+          return (
+            <div key={j.id} className="card"
+              style={{padding:'12px 14px',cursor:'pointer',transition:'.15s',
+                border: isOpen?'2px solid var(--red)':'1px solid var(--br)'}}
+              onClick={()=>setSelId(isOpen?null:j.id)}>
+              <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
+                {/* Sport avatar */}
+                <div style={{width:42,height:42,borderRadius:'var(--rs)',background:sportColor(j.sport)+'22',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{j.em}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                    <span style={{background:sportColor(j.sport),color:'white',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>{j.sport}</span>
+                    {veredicto && <span style={{background:veredicto.fuerte?'rgba(22,163,74,.12)':'rgba(245,158,11,.12)',color:veredicto.color,borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>✓ Veredicto</span>}
+                    {yaVote && <span style={{background:'var(--cel-xl)',color:'var(--cel-d)',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>Ya voté</span>}
+                  </div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{j.titulo}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{j.competencia} · {j.fecha}</div>
+                </div>
+              </div>
+              {/* Mini barra de votos */}
+              {total > 0 && (
+                <div style={{marginTop:10}}>
+                  <div style={{display:'flex',borderRadius:6,overflow:'hidden',height:18}}>
+                    <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',paddingLeft:6,fontSize:9,fontWeight:700,color:'white',minWidth:pa>15?'auto':0,transition:'width .3s'}}>{pa>15?pa+'%':''}</div>
+                    <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'flex-end',paddingRight:6,fontSize:9,fontWeight:700,color:'white'}}>{100-pa>15?(100-pa)+'%':''}</div>
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--tx3)',marginTop:3}}>
+                    <span>{j.opA.slice(0,22)}{j.opA.length>22?'…':''}</span>
+                    <span style={{fontWeight:700}}>{fmtV(total)} votos · {j.comentarios.length} comentarios</span>
+                    <span>{j.opB.slice(0,22)}{j.opB.length>22?'…':''}</span>
+                  </div>
+                </div>
+              )}
+              {total === 0 && (
+                <div style={{marginTop:8,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>Sé el primero en votar</div>
+              )}
+            </div>
+          );
+        })}
+        {jugadasFiltradas.length===0 && (
+          <div style={{textAlign:'center',padding:'30px 0',color:'var(--tx3)'}}>
+            <div style={{fontSize:28,marginBottom:8}}>📺</div>
+            <div>No hay jugadas en este deporte aún</div>
+            <button className="btn btn-sm" style={{marginTop:10}} onClick={()=>setShowSubir(true)}>+ Subir la primera</button>
+          </div>
+        )}
+      </div>
+
+      {/* RANKING SEMANAL */}
+      <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:16}}>
+        <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>🏆 Ranking semanal — más polémicas</div>
+        {ranking.map((j,i)=>(
+          <div key={j.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<2?'1px solid var(--br)':'none',cursor:'pointer'}}
+            onClick={()=>{ setSelId(j.id); window.scrollTo({top:0,behavior:'smooth'}); }}>
+            <div style={{width:26,height:26,borderRadius:'50%',background:i===0?'#F59E0B':i===1?'#9CA3AF':'#CD7F32',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:11,fontWeight:700,color:'white',flexShrink:0}}>{i+1}</div>
+            <div style={{fontSize:18}}>{j.em}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.titulo}</div>
+              <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtV(j.votosA+j.votosB)} votos totales</div>
+            </div>
+            <span style={{background:sportColor(j.sport),color:'white',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:700,flexShrink:0}}>{j.sport}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* MODAL SUBIR JUGADA */}
+      {showSubir && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:200,display:'flex',alignItems:'flex-start',justifyContent:'center',overflowY:'auto',padding:'20px 10px'}}
+          onClick={e=>{if(e.target===e.currentTarget)setShowSubir(false);}}>
+          <div style={{background:'var(--white)',borderRadius:'var(--rl)',padding:20,width:'100%',maxWidth:520,position:'relative'}}>
+            <button onClick={()=>setShowSubir(false)} style={{position:'absolute',top:12,right:14,background:'none',border:'none',fontSize:18,cursor:'pointer',color:'var(--tx3)'}}>✕</button>
+            <div style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:700,marginBottom:16}}>📺 Subir jugada al VAR</div>
+
+            {/* Deporte */}
+            <div style={{marginBottom:12}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Deporte</label>
+              <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+                {DEPORTES_FILTER.slice(1).map(d=>(
+                  <button key={d} onClick={()=>setNueva(n=>({...n,deporte:d}))}
+                    style={{padding:'3px 10px',borderRadius:20,border:'1.5px solid',fontSize:11,fontWeight:700,cursor:'pointer',
+                      background:nueva.deporte===d?sportColor(d):'var(--white)',
+                      borderColor:nueva.deporte===d?sportColor(d):'var(--br)',
+                      color:nueva.deporte===d?'white':'var(--tx2)'}}>
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Titulo */}
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Título de la jugada *</label>
+              <input value={nueva.titulo} onChange={e=>setNueva(n=>({...n,titulo:e.target.value}))} maxLength={120}
+                placeholder="Ej: ¿Fue penal el derribo de Almada en el Superclásico?"
+                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
+            </div>
+            {/* Descripcion */}
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Descripción del contexto</label>
+              <textarea value={nueva.desc} onChange={e=>setNueva(n=>({...n,desc:e.target.value}))} maxLength={300} rows={3}
+                placeholder="Minuto, marcador, descripción de la polémica..."
+                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,resize:'none',boxSizing:'border-box'}}/>
+            </div>
+            {/* Video URL */}
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>URL del video (YouTube embed, opcional)</label>
+              <input value={nueva.videoUrl} onChange={e=>setNueva(n=>({...n,videoUrl:e.target.value}))}
+                placeholder="https://www.youtube.com/embed/..."
+                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
+            </div>
+            {/* Opciones */}
+            <div style={{marginBottom:10}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Pregunta para la comunidad</label>
+              <input value={nueva.pregunta} onChange={e=>setNueva(n=>({...n,pregunta:e.target.value}))} maxLength={80}
+                placeholder="¿Fue penal? / ¿Era try válido?"
+                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'#16A34A',display:'block',marginBottom:4}}>Opción A (verde) *</label>
+                <input value={nueva.opA} onChange={e=>setNueva(n=>({...n,opA:e.target.value}))} maxLength={50}
+                  placeholder="Sí, fue penal"
+                  style={{width:'100%',border:'1.5px solid #16A34A',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,boxSizing:'border-box'}}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--red)',display:'block',marginBottom:4}}>Opción B (roja) *</label>
+                <input value={nueva.opB} onChange={e=>setNueva(n=>({...n,opB:e.target.value}))} maxLength={50}
+                  placeholder="No, simuló"
+                  style={{width:'100%',border:'1.5px solid var(--red)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,boxSizing:'border-box'}}/>
+              </div>
+            </div>
+            <button onClick={subirJugada} disabled={subiendoV||!nueva.titulo||!nueva.opA||!nueva.opB}
+              style={{width:'100%',background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:'11px',fontFamily:'var(--fd)',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!nueva.titulo||!nueva.opA||!nueva.opB)?0.5:1}}>
+              {subiendoV?'Subiendo...':'📺 Publicar al VAR'}
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
@@ -6660,25 +7158,7 @@ function App() {
             {page==='red'       && <RedPeriodismoPage addToast={addToast}/>}
             {page==='podcast'   && <PodcastPage addToast={addToast} user={user}/>}
             {page==='live'      && <EnVivoPage addToast={addToast}/>}
-            {page==='var' && (
-              <div>
-                <div style={{background:'linear-gradient(135deg,var(--cel-d),var(--cel))',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:18,color:'white',display:'flex',alignItems:'center',gap:12}}>
-                  <span style={{fontSize:30}}>📺</span>
-                  <div>
-                    <div style={{fontFamily:'var(--fd)',fontSize:19,fontWeight:700}}>El VAR — Encuestas</div>
-                    <div style={{fontSize:12,opacity:.8}}>La comunidad decide: ¿fue penal o no?</div>
-                  </div>
-                </div>
-                <div className="section-banner">
-                  <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/VAR.JPG"
-                    alt="El VAR" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
-                </div>
-                <div className="sh"><div className="st">Encuestas del momento</div></div>
-                {STATIC_POLLS.map(p => <div key={p.id} className="card cp" style={{marginBottom:14}}><Poll poll={p}/></div>)}
-                <div className="sh" style={{marginTop:8}}><div className="st">En vivo ahora</div></div>
-                <LiveStrip onNav={nav}/>
-              </div>
-            )}
+            {page==='var'       && <VarPage user={user} addToast={addToast}/>}
             {page==='profile' && (
               <div>
                 <div style={{background:'linear-gradient(135deg,var(--cel-d),var(--cel))',borderRadius:'var(--rl)',padding:24,textAlign:'center',marginBottom:16}}>
