@@ -104,7 +104,7 @@ window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplaz
 
 // ── NewsData.io — imágenes garantizadas, 200 req/día gratis ──────────────
 // Registrate sin tarjeta en https://newsdata.io
-window.key.startsWith = 'pub_b6a0630b0e984891bb8836a1605fc699';  // ← PEGÁ ACÁ TU KEY DE NEWSDATA.IO
+window.NEWSDATA_KEY = 'pub_b6a0630b0e984891bb8836a1605fc699';  // ← PEGÁ ACÁ TU KEY DE NEWSDATA.IO
 
 // ── FOOTBALL-DATA.ORG — Europa (CL, La Liga, Premier, Serie A, etc.) ─────
 // Registrate en https://www.football-data.org/client/register
@@ -119,7 +119,7 @@ window.APISPORTS_KEY = '848bc1a907e1b48d68cd41db502c9ff5';  // ← pegá acá tu
 
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
-  if (!key || key === 'pub_b6a0630b0e984891bb8836a1605fc699') return [];
+  if (!key || key.startsWith('TU_')) return [];
   const CACHE_KEY = 'tl_newsdata';
   const CACHE_TTL = 15 * 60 * 1000;
   try {
