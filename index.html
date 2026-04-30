@@ -106,6 +106,10 @@ window.YOUTUBE_KEY = 'AIzaSyBuXwjlZ9PndrnmaEdTILM2ygU0g9EEWeU';  // ← reemplaz
 // Registrate sin tarjeta en https://newsdata.io
 window.NEWSDATA_KEY = 'pub_b6a0630b0e984891bb8836a1605fc699';  // ← PEGÁ ACÁ TU KEY DE NEWSDATA.IO
 
+// ── TheNewsAPI.com — imágenes garantizadas, CORS abierto, 100 req/día gratis ──
+// Registrate en https://www.thenewsapi.com → copiá tu API Token
+window.THENEWSAPI_KEY = 'TU_THENEWSAPI_KEY_AQUI';  // ← PEGÁ ACÁ TU KEY DE THENEWSAPI.COM
+
 // ── FOOTBALL-DATA.ORG — Europa (CL, La Liga, Premier, Serie A, etc.) ─────
 // Registrate en https://www.football-data.org/client/register
 // Free tier: Champions League, La Liga, Premier, Bundesliga, Serie A, Ligue 1, etc.
@@ -119,7 +123,7 @@ window.APISPORTS_KEY = '848bc1a907e1b48d68cd41db502c9ff5';  // ← pegá acá tu
 
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
-  if (!key || key.startsWith('TU_')) return [];
+  if (!key || key.startsWith('TU_') || key.length < 10) return [];
   const CACHE_KEY = 'tl_newsdata';
   const CACHE_TTL = 15 * 60 * 1000;
   try {
@@ -199,6 +203,65 @@ window.fetchGNews = async function() {
     console.warn('GNews ✗:', e.message);
     return [];
   }
+};
+
+// ── TheNewsAPI.com — CORS abierto, imágenes garantizadas, 100 req/día gratis ──
+window.fetchTheNewsAPI = async function() {
+  const key = window.THENEWSAPI_KEY;
+  if (!key || key.startsWith('TU_') || key.length < 10) return [];
+  const CACHE_KEY = 'tl_thenewsapi';
+  const CACHE_TTL = 15 * 60 * 1000;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (raw) {
+      const { data, ts } = JSON.parse(raw);
+      if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length) return data;
+    }
+  } catch(e) {}
+  try {
+    const url = `https://api.thenewsapi.com/v1/news/all?api_token=${key}&search=deportes+argentina&language=es&limit=20&sort=published_at`;
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('TheNewsAPI HTTP ' + resp.status);
+    const json = await resp.json();
+    if (!Array.isArray(json.data)) throw new Error('TheNewsAPI: sin datos');
+    const items = json.data.map((a, i) => ({
+      _id:         'tna_' + i + '_' + (a.uuid || '').slice(-8),
+      title:       a.title || '',
+      excerpt:     (a.description || '').slice(0, 220),
+      publishedAt: a.published_at || new Date().toISOString(),
+      coverImage:  a.image_url || window.getSportsImage(a.title || ''),
+      cat:         'Deportes', category: 'Deportes',
+      meta:        { sourceName: a.source || 'TheNewsAPI', sourceUrl: a.url || '#' }
+    })).filter(a => a.title && a.coverImage);
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
+    console.log('TheNewsAPI ✓ (' + items.length + ' artículos con imagen)');
+    return items;
+  } catch(e) {
+    console.warn('TheNewsAPI ✗:', e.message);
+    return [];
+  }
+};
+
+// ── Imagen deportiva por tema (fallback gratuito sin key, usa Unsplash Source) ──
+window.getSportsImage = function(titulo) {
+  const lower = (titulo || '').toLowerCase();
+  let kw = 'sports argentina';
+  if (lower.includes('fútbol') || lower.includes('gol') || lower.includes('river') || lower.includes('boca') || lower.includes('liga'))
+    kw = 'soccer football';
+  else if (lower.includes('rugby') || lower.includes('pumas'))
+    kw = 'rugby sport';
+  else if (lower.includes('tenis') || lower.includes('atp') || lower.includes('wta'))
+    kw = 'tennis sport';
+  else if (lower.includes('básquet') || lower.includes('basket') || lower.includes('nba'))
+    kw = 'basketball sport';
+  else if (lower.includes('f1') || lower.includes('fórmula') || lower.includes('colapinto') || lower.includes('formula'))
+    kw = 'formula1 racing';
+  else if (lower.includes('boxeo') || lower.includes('mma') || lower.includes('ufc'))
+    kw = 'boxing sport';
+  else if (lower.includes('atletismo') || lower.includes('natación'))
+    kw = 'athletics sport';
+  const seed = lower.length + lower.charCodeAt(0);
+  return 'https://source.unsplash.com/400x250/?' + encodeURIComponent(kw) + '&sig=' + seed;
 };
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
@@ -1174,18 +1237,25 @@ function useNews(page=1, cat='', search='') {
       (window.fetchGNews ? window.fetchGNews() : Promise.resolve([])),
       // NewsData.io — imagenes garantizadas (200 req/dia gratis)
       (window.fetchNewsData ? window.fetchNewsData() : Promise.resolve([])),
+      // TheNewsAPI — CORS abierto, imágenes garantizadas (100 req/día gratis)
+      (window.fetchTheNewsAPI ? window.fetchTheNewsAPI() : Promise.resolve([])),
       // RSS feeds en paralelo
       ...((window.RSS_FEEDS || []).map(f =>
         (window.fetchRSSFeed ? window.fetchRSSFeed(f.url, f.name) : Promise.resolve([])).then(items => ({ name: f.name, count: (items||[]).length, items: items||[] }))
       ))
-    ]).then(([gnewsItems, newsDataItems, ...results]) => {
+    ]).then(([gnewsItems, newsDataItems, tnaItems, ...results]) => {
       const feedStatus = results.map(r => ({ name: r.name, count: r.count }));
       const rssItems   = results.flatMap(r => r.items);
-      // Combinar: GNews + NewsData (ambos con imagen) + RSS, deduplicar
-      const withImg = [...gnewsItems, ...(newsDataItems||[])];
+      // Combinar: GNews + NewsData + TheNewsAPI (todos con imagen) + RSS, deduplicar
+      const withImg = [...gnewsItems, ...(newsDataItems||[]), ...(tnaItems||[])];
       const gnewsTitles = new Set(withImg.map(a => a.title.slice(0,40).toLowerCase()));
       const dedupRss    = rssItems.filter(a => !gnewsTitles.has(a.title.slice(0,40).toLowerCase()));
-      let allPosts = [...withImg, ...dedupRss].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
+      // Para RSS sin imagen, usar getSportsImage como fallback
+      const rssConFallback = dedupRss.map(a => ({
+        ...a,
+        coverImage: a.coverImage || (window.getSportsImage ? window.getSportsImage(a.title) : null)
+      }));
+      let allPosts = [...withImg, ...rssConFallback].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
       const limit = 18;
@@ -2810,80 +2880,379 @@ function DebatesTab({user,addToast}){
 }
 
 function StreamingPage({ addToast }) {
-  const [streamOpen, setStreamOpen] = useState(false);
-  const [chatMsg, setChatMsg]  = useState('');
-  const [chatMsgs, setChatMsgs] = useState([
-    {id:1,u:'GonzaB',text:'Que partido 🔥⚽',own:false},
-    {id:2,u:'PumasFan',text:'¡Los Pumas también la rompen!',own:false},
+  const [tab, setTab]            = useState('estudio');
+  const [streams, setStreams]    = useState([]);
+  const [loadingStr, setLoadStr] = useState(false);
+  const [selStream, setSelStream]= useState(null);
+  const [filtPlat, setFiltPlat]  = useState('todos');
+  const [posts, setPosts]        = useState(COMMUNITY_POSTS);
+  const [newPost, setNewPost]    = useState('');
+  const [postando, setPostando]  = useState(false);
+  const [chatMsgs, setChatMsgs]  = useState([
+    {id:1,u:'GonzaB',   av:'G',col:'#E8262A',text:'¡Qué golazo! 🔥⚽',ts:'hace 5m'},
+    {id:2,u:'PumasFan', av:'P',col:'#16A34A',text:'Los Pumas la rompen 🏉🇦🇷',ts:'hace 4m'},
+    {id:3,u:'ColaAR',   av:'C',col:'#F59E0B',text:'Colapinto top 🏎️💨',ts:'hace 2m'},
   ]);
-  const chatRef = useRef();
-  function sendChat() {
-    if (!chatMsg.trim()) return;
-    setChatMsgs(m => [...m,{id:Date.now(),u:'Vos',text:chatMsg,own:true}]);
-    setChatMsg('');
-    setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+  const [chatMsg, setChatMsg]    = useState('');
+  const [online, setOnline]      = useState(347);
+  const chatRef                  = useRef();
+  const chatChannelRef           = useRef(null);
+
+  const sb       = window.__supabase;
+  const supaUser = window.__supabaseUser;
+  const isGuest  = !supaUser;
+
+  useEffect(() => {
+    if (tab === 'streams' && streams.length === 0) cargarStreams();
+    if (tab === 'chat') suscribirChat();
+  }, [tab]);
+
+  async function cargarStreams() {
+    setLoadStr(true);
+    try {
+      const s = await fetchAllStreams();
+      setStreams(s.length ? s : STREAMS);
+    } catch(e) { setStreams(STREAMS); }
+    setLoadStr(false);
   }
-  if (!streamOpen) return (
-    <div>
-      <div className="sh"><div className="st">Streaming Deportivo</div></div>
-      <div className="stream-hero" onClick={()=>setStreamOpen(true)}>
-        <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/stremmers.png" alt="Acceso Streaming Tribuna Libre"
-          onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>
-        <div style={{display:'none',height:200,alignItems:'center',justifyContent:'center',background:'linear-gradient(135deg,var(--cel-d),var(--cel))',fontSize:60}}>📡</div>
-        <div className="stream-hero-ov">
-          <div className="play-circle"><Ic.Play style={{width:22,height:22,color:'white',marginLeft:3}}/></div>
-          <div style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:700,color:'white',marginBottom:5}}>Streaming en Vivo</div>
-          <div style={{fontSize:13,color:'rgba(255,255,255,.7)'}}>Hacé clic para ver todas las transmisiones · {STREAMS.filter(s=>s.live).length} en vivo ahora</div>
-        </div>
-      </div>
-    </div>
-  );
+
+  function suscribirChat() {
+    if (!sb || chatChannelRef.current) return;
+    sb.from('streaming_chat').select('*').order('created_at',{ascending:false}).limit(50)
+      .then(({data}) => {
+        if (data && data.length) {
+          setChatMsgs(data.reverse().map(m => ({
+            id:m.id, u:m.username, av:(m.username||'?')[0].toUpperCase(),
+            col:'#4A90D9', text:m.text,
+            ts:new Date(m.created_at).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})
+          })));
+        }
+      });
+    chatChannelRef.current = sb.channel('streaming-chat')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'streaming_chat'}, payload => {
+        const m = payload.new;
+        setChatMsgs(prev => [...prev.slice(-99),{
+          id:m.id, u:m.username, av:(m.username||'?')[0].toUpperCase(),
+          col:'#4A90D9', text:m.text,
+          ts:new Date(m.created_at).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})
+        }]);
+        setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+      })
+      .subscribe();
+  }
+  useEffect(() => () => { if(chatChannelRef.current && sb) sb.removeChannel(chatChannelRef.current); }, []);
+
+  async function enviarChat() {
+    if (!chatMsg.trim()) return;
+    const texto  = chatMsg.trim();
+    const nombre = isGuest ? 'Invitado' : (supaUser?.displayName || 'Usuario');
+    setChatMsg('');
+    if (sb) {
+      await sb.from('streaming_chat').insert({username:nombre, text:texto});
+    } else {
+      setChatMsgs(m => [...m,{id:Date.now(),u:nombre,av:nombre[0].toUpperCase(),col:'#4A90D9',text:texto,ts:'ahora'}]);
+      setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    }
+  }
+
+  async function publicarPost() {
+    if (!newPost.trim() || isGuest) return;
+    setPostando(true);
+    const nombre = supaUser?.displayName || 'Usuario';
+    if (sb) {
+      const {data,error} = await sb.from('community_posts').insert({user:nombre,text:newPost.trim(),likes:0,type:'streaming'}).select().single();
+      if (!error && data) {
+        setPosts(p => [{id:data.id,user:nombre,av:nombre[0].toUpperCase(),color:'#4A90D9',text:newPost.trim(),likes:0,time:'ahora'},...p]);
+        addToast({msg:'✅ Post publicado',type:'ok'});
+      }
+    } else {
+      setPosts(p => [{id:Date.now(),user:nombre,av:nombre[0].toUpperCase(),color:'#4A90D9',text:newPost.trim(),likes:0,time:'ahora'},...p]);
+      addToast({msg:'✅ Publicado',type:'ok'});
+    }
+    setNewPost(''); setPostando(false);
+  }
+
+  function getEmbedHtml(s) {
+    if (s.plat === 'youtube') {
+      const vid = s.id.replace('yt_','');
+      return `<iframe width="100%" height="100%" src="https://www.youtube.com/embed/${vid}?autoplay=1" frameborder="0" allow="autoplay;encrypted-media" allowfullscreen style="border-radius:8px"></iframe>`;
+    }
+    if (s.plat === 'kick') {
+      const slug = s.id.replace('kick_','');
+      return `<iframe width="100%" height="100%" src="https://player.kick.com/${slug}" frameborder="0" allowfullscreen style="border-radius:8px"></iframe>`;
+    }
+    return '';
+  }
+
+  const streamsFilt = filtPlat === 'todos' ? streams : streams.filter(s => s.plat === filtPlat);
+  const tabS = (id) => ({
+    flex:1,padding:'7px 0',textAlign:'center',cursor:'pointer',fontSize:12,fontWeight:700,
+    fontFamily:'var(--fd)',transition:'.15s',
+    borderBottom: tab===id ? '2.5px solid var(--red)' : '2.5px solid transparent',
+    color: tab===id ? 'var(--red)' : 'var(--tx3)',
+  });
+
   return (
     <div>
-      <div className="sh">
-        <div className="st">Streaming</div>
-        <button className="btn btn-o btn-sm" onClick={()=>setStreamOpen(false)}>← Volver</button>
-      </div>
-      <div style={{background:'rgba(192,57,43,.07)',border:'1px solid rgba(192,57,43,.2)',borderRadius:'var(--rs)',padding:'9px 14px',marginBottom:14,display:'flex',alignItems:'center',gap:8}}>
-        <div className="ldot"/><span style={{fontSize:12,fontWeight:600,color:'var(--red)'}}>{STREAMS.filter(s=>s.live).length} transmisiones en vivo ahora mismo</span>
-        <span style={{fontSize:11,color:'var(--tx3)',marginLeft:'auto'}}>{STREAMS.filter(s=>s.live).reduce((a,s)=>a+s.viewers,0).toLocaleString()} viendo</span>
-      </div>
-      <div style={{display:'grid',gap:12,gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',marginBottom:20}}>
-        {STREAMS.map(s => (
-          <div key={s.id} className="sc" onClick={()=>addToast({msg:`Abriendo ${s.tit}...`,type:'ok'})}>
-            <div className="sc-thumb">
-              <span>{s.em}</span>
-              {s.live && <div className="live-tag"><div style={{width:5,height:5,borderRadius:'50%',background:'white',animation:'pulse 1.4s infinite'}}/>LIVE</div>}
-            </div>
-            <div className="sc-body">
-              <div className="sc-tit">{s.tit}</div>
-              <div className="sc-info">
-                <span>{s.ch}</span>
-                {s.live && <><div style={{width:5,height:5,borderRadius:'50%',background:'var(--red)',flexShrink:0}}/><span style={{color:'var(--red)'}}>{s.viewers.toLocaleString()}</span></>}
-              </div>
-            </div>
+
+      {/* HEADER */}
+      <div style={{background:'linear-gradient(135deg,#1A0A0A,#3D0000,var(--red))',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:0,right:0,width:140,height:140,borderRadius:'50%',background:'rgba(255,255,255,.07)',transform:'translate(40px,-40px)'}}/>
+        <div style={{width:44,height:44,borderRadius:'50%',background:'rgba(255,255,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,fontSize:22}}>📡</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700}}>Streaming Deportivo</div>
+          <div style={{fontSize:11,opacity:.8}}>Studio · Streams en vivo · Comunidad · Chat</div>
+        </div>
+        {streams.filter(s=>s.live).length > 0 && (
+          <div style={{background:'var(--red)',borderRadius:20,padding:'3px 10px',fontSize:11,fontWeight:700,display:'flex',alignItems:'center',gap:5}}>
+            <div style={{width:6,height:6,borderRadius:'50%',background:'white',animation:'pulse 1.4s infinite'}}/>
+            {streams.filter(s=>s.live).length} en vivo
           </div>
+        )}
+      </div>
+
+      {/* TABS */}
+      <div style={{display:'flex',background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',marginBottom:16,overflow:'hidden'}}>
+        {[{id:'estudio',l:'🎙️ Estudio'},{id:'streams',l:'📺 Streams'},{id:'comunidad',l:'💬 Comunidad'},{id:'chat',l:'🔴 Chat'}].map(t=>(
+          <div key={t.id} style={tabS(t.id)} onClick={()=>setTab(t.id)}>{t.l}</div>
         ))}
       </div>
-      <div className="sh"><div className="st" style={{color:'var(--red)'}}><div className="ldot"/>Chat del streaming</div></div>
-      <div className="chat-wrap">
-        <div className="chat-hd">
-          <div className="ldot"/><span style={{fontWeight:600,fontSize:13}}>Chat en vivo</span>
-          <span style={{marginLeft:'auto',fontSize:10,color:'var(--tx3)'}}>1.2k online</span>
+
+      {/* ── TAB: ESTUDIO ── */}
+      {tab==='estudio' && (
+        <div>
+          <div style={{position:'relative',borderRadius:'var(--rl)',overflow:'hidden',marginBottom:16,background:'linear-gradient(135deg,#0D0D0D,#1A1A2E)',minHeight:180}}>
+            <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/stremmers.png" alt="Estudio Tribuna Libre"
+              style={{width:'100%',maxHeight:220,objectFit:'cover',opacity:.7}} onError={e=>e.target.style.display='none'}/>
+            <div style={{position:'absolute',bottom:0,left:0,right:0,padding:'24px 20px',background:'linear-gradient(transparent,rgba(0,0,0,.88))'}}>
+              <div style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:700,color:'white',marginBottom:4}}>Estudio Tribuna Libre</div>
+              <div style={{fontSize:12,color:'rgba(255,255,255,.75)'}}>Tu programa · Tu voz · Tu deporte · Pronto abrimos el estudio para todos</div>
+            </div>
+          </div>
+          <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:12}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,marginBottom:8}}>¿Qué es Tribuna Libre?</div>
+            <div style={{fontSize:13,color:'var(--tx2)',lineHeight:1.6}}>Un espacio abierto para que cualquier persona pueda hacer su propio programa deportivo y transmitirlo a toda la comunidad. Fútbol, rugby, básquet, automovilismo — cualquier deporte tiene lugar acá.</div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:14}}>
+            {[
+              {em:'📅',t:'Horarios libres',d:'Reservá tu franja y transmitís cuando quieras'},
+              {em:'🎙️',t:'Tu programa',d:'Conducís vos, definís los temas, invitás a quien quieras'},
+              {em:'👥',t:'Comunidad real',d:'Tu audiencia ya está acá — chat en vivo con tus oyentes'},
+              {em:'🚀',t:'Próximamente',d:'El estudio físico está en camino · primeros en la lista',red:true},
+            ].map((c,i)=>(
+              <div key={i} style={{background:c.red?'rgba(192,57,43,.07)':'var(--cel-xl)',border:`1px solid ${c.red?'rgba(192,57,43,.2)':'var(--br)'}`,borderRadius:'var(--r)',padding:'12px 14px'}}>
+                <div style={{fontSize:22,marginBottom:6}}>{c.em}</div>
+                <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:c.red?'var(--red)':'var(--tx)',marginBottom:3}}>{c.t}</div>
+                <div style={{fontSize:11,color:'var(--tx2)'}}>{c.d}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{background:'linear-gradient(135deg,var(--red),#8B0000)',borderRadius:'var(--r)',padding:18,textAlign:'center',marginBottom:14}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,color:'white',marginBottom:6}}>¿Querés hacer tu programa?</div>
+            <div style={{fontSize:12,color:'rgba(255,255,255,.8)',marginBottom:14}}>Anotate en la lista de espera — te avisamos cuando el estudio abra</div>
+            <button className="btn" style={{background:'white',color:'var(--red)',fontFamily:'var(--fd)',fontWeight:700,fontSize:13,padding:'9px 22px',borderRadius:30}}
+              onClick={()=>addToast({msg:'✅ ¡Te anotaste! Te avisamos cuando abramos',type:'ok'})}>
+              Quiero sumarme a Tribuna Libre
+            </button>
+          </div>
+          <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px'}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:10}}>Equipamiento del estudio</div>
+            {[
+              {em:'🎥',t:'Cámara HD',d:'Logitech C920 o similar · 1080p a 30fps'},
+              {em:'🎙️',t:'Micrófono',d:'Condensador USB · calidad broadcast'},
+              {em:'💡',t:'Iluminación',d:'Panel LED ajustable · clave para buena imagen'},
+              {em:'💻',t:'Software',d:'OBS Studio — gratis y profesional'},
+              {em:'📡',t:'Plataforma',d:'YouTube · Kick · integrado acá en Tribuna Libre'},
+            ].map((eq,i)=>(
+              <div key={i} style={{display:'flex',alignItems:'flex-start',gap:10,padding:'8px 0',borderBottom:i<4?'1px solid var(--br)':'none'}}>
+                <span style={{fontSize:18,width:26,flexShrink:0,textAlign:'center'}}>{eq.em}</span>
+                <div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600}}>{eq.t}</div>
+                  <div style={{fontSize:11,color:'var(--tx2)'}}>{eq.d}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div ref={chatRef} className="chat-bd">
-          {chatMsgs.map(m => (
-            <div key={m.id} className={`cmsg ${m.own?'own':'other'}`}>
-              {!m.own && <div className="cmsg-u">{m.u}</div>}
-              <div>{m.text}</div>
+      )}
+
+      {/* ── TAB: STREAMS ── */}
+      {tab==='streams' && (
+        <div>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,gap:8}}>
+            <div style={{fontSize:12,color:'var(--tx3)'}}>
+              {loadingStr ? '⟳ Buscando streams…' : streams.length > 0 ? `${streams.filter(s=>s.live).length} en vivo · ${streams.length} total` : 'Streams de ejemplo'}
+            </div>
+            <button className="btn btn-sm btn-o" onClick={cargarStreams} disabled={loadingStr}>⟳ Actualizar</button>
+          </div>
+          <div style={{display:'flex',gap:6,marginBottom:12}}>
+            {[{id:'todos',l:'Todos',col:null},{id:'youtube',l:'YouTube',col:'#CC0000'},{id:'kick',l:'Kick',col:'#219653'}].map(f=>(
+              <button key={f.id} onClick={()=>setFiltPlat(f.id)}
+                style={{padding:'4px 12px',borderRadius:20,border:'1.5px solid',fontSize:11,fontWeight:700,cursor:'pointer',transition:'.15s',
+                  background:filtPlat===f.id?(f.col||'var(--tx)'):'var(--white)',
+                  borderColor:filtPlat===f.id?(f.col||'var(--tx)'):'var(--br)',
+                  color:filtPlat===f.id?'white':'var(--tx2)'}}>
+                {f.l}
+              </button>
+            ))}
+          </div>
+          {selStream && (
+            <div style={{background:'#000',borderRadius:'var(--r)',overflow:'hidden',marginBottom:14,aspectRatio:'16/9',position:'relative'}}>
+              <div dangerouslySetInnerHTML={{__html:getEmbedHtml(selStream)}} style={{width:'100%',height:'100%'}}/>
+              <button onClick={()=>setSelStream(null)}
+                style={{position:'absolute',top:8,right:8,background:'rgba(0,0,0,.7)',border:'none',color:'white',borderRadius:20,padding:'3px 10px',fontSize:11,cursor:'pointer'}}>
+                ✕ Cerrar
+              </button>
+              <div style={{position:'absolute',bottom:8,left:10,background:'rgba(0,0,0,.7)',borderRadius:8,padding:'3px 8px',fontSize:11,color:'white'}}>
+                📺 {selStream.tit}
+              </div>
+            </div>
+          )}
+          {loadingStr && (
+            <div style={{textAlign:'center',padding:30,color:'var(--tx3)'}}>
+              <div style={{fontSize:28,marginBottom:8,animation:'pulse 1.4s infinite'}}>📺</div>
+              <div style={{fontSize:13}}>Buscando transmisiones en vivo…</div>
+              <div style={{fontSize:11,marginTop:4}}>YouTube · Kick</div>
+            </div>
+          )}
+          {!loadingStr && (
+            <div style={{display:'grid',gap:10}}>
+              {streamsFilt.map(s=>(
+                <div key={s.id} className="card"
+                  style={{display:'flex',gap:12,alignItems:'center',cursor:'pointer',padding:'10px 14px',transition:'.15s',
+                    border:selStream?.id===s.id?`1.5px solid ${s.color}`:'1px solid var(--br)'}}
+                  onClick={()=>setSelStream(selStream?.id===s.id?null:s)}>
+                  <div style={{width:72,height:44,borderRadius:6,overflow:'hidden',flexShrink:0,background:'#1a1a1a',display:'flex',alignItems:'center',justifyContent:'center',position:'relative'}}>
+                    {s.thumb
+                      ? <img src={s.thumb} alt="" style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>e.target.style.display='none'}/>
+                      : <span style={{fontSize:22}}>{s.em}</span>
+                    }
+                    {s.live && <div style={{position:'absolute',top:3,left:3,background:'var(--red)',borderRadius:3,padding:'1px 4px',fontSize:8,fontWeight:700,color:'white'}}>LIVE</div>}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,color:'var(--tx)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{s.tit}</div>
+                    <div style={{fontSize:11,color:'var(--tx3)',marginTop:2}}>{s.ch}</div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    {s.live && s.viewers > 0 && <div style={{fontSize:11,fontWeight:700,color:'var(--red)',marginBottom:2}}>{s.viewers.toLocaleString('es-AR')}</div>}
+                    <div style={{fontSize:10,padding:'2px 6px',borderRadius:8,fontWeight:700,color:'white',
+                      background:s.plat==='youtube'?'#CC0000':s.plat==='kick'?'#219653':'#9146FF'}}>
+                      {s.plat==='youtube'?'YT':s.plat==='kick'?'KICK':s.plat.toUpperCase()}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {streamsFilt.length===0 && (
+                <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>
+                  <div style={{fontSize:28,marginBottom:8}}>📡</div>
+                  <div>Sin streams en este momento</div>
+                  <div style={{fontSize:11,marginTop:4}}>Se actualizan cada 5 minutos</div>
+                </div>
+              )}
+            </div>
+          )}
+          <div style={{fontSize:10,color:'var(--tx3)',textAlign:'center',marginTop:14}}>📡 YouTube Live + Kick · actualización automática</div>
+        </div>
+      )}
+
+      {/* ── TAB: COMUNIDAD ── */}
+      {tab==='comunidad' && (
+        <div>
+          {isGuest ? (
+            <div style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:12,fontSize:12,color:'var(--tx2)',textAlign:'center'}}>
+              <div style={{marginBottom:6}}>🔒 Iniciá sesión para publicar en la comunidad</div>
+              <button className="btn btn-sm" onClick={()=>document.querySelector('.sign-btn')?.click()}>Ingresar / Registrarse</button>
+            </div>
+          ) : (
+            <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:12}}>
+              <div style={{display:'flex',gap:8,alignItems:'flex-start'}}>
+                <div style={{width:32,height:32,borderRadius:'50%',background:'var(--cel-d)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontFamily:'var(--fd)',fontSize:13,fontWeight:700,flexShrink:0}}>
+                  {(supaUser?.displayName||'U')[0].toUpperCase()}
+                </div>
+                <textarea value={newPost} onChange={e=>setNewPost(e.target.value)} maxLength={280}
+                  placeholder="¿Qué estás mirando? Compartilo con la comunidad..."
+                  style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,resize:'none',height:66,fontFamily:'var(--fw)',color:'var(--tx)',background:'var(--bg)'}}/>
+              </div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginTop:8}}>
+                <span style={{fontSize:10,color:'var(--tx3)'}}>{newPost.length}/280</span>
+                <button className="btn btn-sm" style={{background:'var(--red)',color:'white',fontFamily:'var(--fd)',fontWeight:700}}
+                  onClick={publicarPost} disabled={!newPost.trim()||postando}>
+                  {postando?'Publicando…':'Publicar'}
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="sh"><div className="st">Comunidad del streaming</div><span className="sl">{posts.length} posts</span></div>
+          {posts.map(p=>(
+            <div key={p.id} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:10}}>
+              <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:8}}>
+                <div style={{width:30,height:30,borderRadius:'50%',background:p.color||'var(--cel)',display:'flex',alignItems:'center',justifyContent:'center',color:'white',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,flexShrink:0}}>
+                  {p.av||(p.user||'?')[0].toUpperCase()}
+                </div>
+                <div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700}}>{p.user}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{p.time}</div>
+                </div>
+              </div>
+              <div style={{fontSize:13,color:'var(--tx)',lineHeight:1.5}}>{p.text}</div>
+              <div style={{display:'flex',gap:12,marginTop:8}}>
+                <button style={{background:'none',border:'none',fontSize:11,color:'var(--tx3)',cursor:'pointer',display:'flex',alignItems:'center',gap:4}}
+                  onClick={()=>setPosts(prev=>prev.map(x=>x.id===p.id?{...x,likes:(x.likes||0)+1}:x))}>
+                  🔥 {p.likes||0}
+                </button>
+                <button style={{background:'none',border:'none',fontSize:11,color:'var(--tx3)',cursor:'pointer'}}
+                  onClick={()=>addToast({msg:'Respuestas próximamente',type:'ok'})}>
+                  💬 Responder
+                </button>
+              </div>
             </div>
           ))}
         </div>
-        <div className="chat-inp">
-          <input className="chat-txt" value={chatMsg} onChange={e=>setChatMsg(e.target.value)} onKeyDown={e=>e.key==='Enter'&&sendChat()} placeholder="Comentá el partido..."/>
-          <button className="chat-snd" onClick={sendChat}><Ic.Send style={{width:14,height:14}}/></button>
+      )}
+
+      {/* ── TAB: CHAT EN VIVO ── */}
+      {tab==='chat' && (
+        <div>
+          <div style={{background:'rgba(192,57,43,.07)',border:'1px solid rgba(192,57,43,.2)',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:10,display:'flex',alignItems:'center',gap:8}}>
+            <div className="ldot"/>
+            <span style={{fontSize:12,fontWeight:700,color:'var(--red)'}}>Chat en vivo · Streaming Deportivo</span>
+            <span style={{marginLeft:'auto',fontSize:10,color:'var(--tx3)'}}>{online.toLocaleString('es-AR')} online</span>
+          </div>
+          <div ref={chatRef} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 12px',height:340,overflowY:'auto',marginBottom:10,display:'flex',flexDirection:'column',gap:6}}>
+            {chatMsgs.map(m=>(
+              <div key={m.id} style={{display:'flex',gap:7,alignItems:'flex-start'}}>
+                <div style={{width:24,height:24,borderRadius:'50%',background:m.col||'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:10,fontWeight:700,color:'white',fontFamily:'var(--fd)'}}>
+                  {m.av||m.u[0]}
+                </div>
+                <div>
+                  <span style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700,color:m.col||'var(--cel-d)',marginRight:5}}>{m.u}</span>
+                  <span style={{fontSize:10,color:'var(--tx3)',marginRight:6}}>{m.ts}</span>
+                  <div style={{fontSize:13,color:'var(--tx)',lineHeight:1.4}}>{m.text}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+          {isGuest ? (
+            <div style={{textAlign:'center',padding:'10px',fontSize:12,color:'var(--tx3)',background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--rs)'}}>
+              🔒 <button className="btn btn-sm" style={{marginLeft:6}} onClick={()=>document.querySelector('.sign-btn')?.click()}>Ingresar</button> para chatear
+            </div>
+          ) : (
+            <div style={{display:'flex',gap:8}}>
+              <input className="chat-txt"
+                style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 12px',fontSize:13}}
+                value={chatMsg} onChange={e=>setChatMsg(e.target.value)}
+                onKeyDown={e=>e.key==='Enter'&&enviarChat()}
+                placeholder="Comentá el partido..." maxLength={200}/>
+              <button className="chat-snd" onClick={enviarChat}
+                style={{background:'var(--red)',border:'none',borderRadius:'var(--rs)',padding:'0 14px',color:'white',cursor:'pointer'}}>
+                <Ic.Send style={{width:14,height:14}}/>
+              </button>
+            </div>
+          )}
+          {!sb && <div style={{fontSize:10,color:'var(--tx3)',textAlign:'center',marginTop:8}}>💡 Configurá Supabase para chat en tiempo real con toda la comunidad</div>}
         </div>
-      </div>
+      )}
+
     </div>
   );
 }
