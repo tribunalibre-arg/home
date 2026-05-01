@@ -3221,6 +3221,12 @@ function VarPage({ user, addToast }) {
   return (
     <div>
 
+      {/* BANNER */}
+      <div className="section-banner">
+        <img src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/VAR.JPG"
+          alt="El VAR" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
+      </div>
+
       {/* HEADER */}
       <div style={{background:'linear-gradient(135deg,#1A0A0A,#3D0000,var(--red))',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12,position:'relative',overflow:'hidden'}}>
         <div style={{position:'absolute',top:0,right:0,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.06)',transform:'translate(50px,-50px)'}}/>
