@@ -2690,6 +2690,436 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
   );
 }
 
+// ══════════════════════════════════════════════════════════════
+// ADMIN — Panel de administración completo
+// Acceso: solo usuarios con rol admin o moderator en Supabase
+// ══════════════════════════════════════════════════════════════
+const ADMIN_TABS = [
+  {id:'overview',   l:'📊 Overview',     roles:['admin','moderator']},
+  {id:'usuarios',   l:'👥 Usuarios',     roles:['admin']},
+  {id:'contenido',  l:'📝 Contenido',    roles:['admin','moderator']},
+  {id:'reportes',   l:'🚨 Reportes',     roles:['admin','moderator']},
+  {id:'settings',   l:'⚙️ Config',       roles:['admin']},
+  {id:'log',        l:'📋 Activity log', roles:['admin']},
+];
+
+function AdminPage({ user, addToast }) {
+  const sb       = window.__supabase;
+  const sbUser   = window.__supabaseUser;
+
+  // ── verificar rol ────────────────────────────────────────
+  const [myRole,  setMyRole]   = useState(null);   // 'admin' | 'moderator' | null
+  const [checking,setChecking] = useState(true);
+
+  useEffect(() => {
+    async function checkRole() {
+      if (!sb || !sbUser) { setChecking(false); return; }
+      try {
+        const { data } = await sb.rpc('get_my_role');
+        setMyRole(data || null);
+      } catch(e) { setMyRole(null); }
+      setChecking(false);
+    }
+    checkRole();
+  }, []);
+
+  // ── tab activo ──────────────────────────────────────────
+  const [tab, setTab] = useState('overview');
+
+  // ── estados por módulo ──────────────────────────────────
+  const [usuarios,   setUsuarios]   = useState([]);
+  const [posts,      setPosts]      = useState([]);
+  const [reportes,   setReportes]   = useState([]);
+  const [logs,       setLogs]       = useState([]);
+  const [settings,   setSettings]   = useState({});
+  const [stats,      setStats]      = useState({users:0,posts:0,comments:0,reports:0,votos:0});
+  const [loading,    setLoading]    = useState(false);
+  const [savingSet,  setSavingSet]  = useState(false);
+
+  // cargar datos según tab
+  useEffect(() => { if (myRole) loadTab(tab); }, [tab, myRole]);
+
+  async function loadTab(t) {
+    if (!sb) return;
+    setLoading(true);
+    try {
+      if (t === 'overview') {
+        const [u,p,c,r,v] = await Promise.all([
+          sb.from('profiles').select('id',{count:'exact',head:true}),
+          sb.from('community_posts').select('id',{count:'exact',head:true}),
+          sb.from('comments').select('id',{count:'exact',head:true}),
+          sb.from('reports').select('id',{count:'exact',head:true}).eq('status','pending'),
+          sb.from('var_votos').select('id',{count:'exact',head:true}),
+        ]);
+        setStats({
+          users: u.count||0, posts: p.count||0,
+          comments: c.count||0, reports: r.count||0, votos: v.count||0,
+        });
+        // últimos 8 logs
+        const {data:lg} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(8);
+        setLogs(lg||[]);
+      }
+      if (t === 'usuarios') {
+        const {data} = await sb.from('profiles').select(`
+          id, display_name, username, reputation, is_suspended, created_at,
+          user_roles(roles(name))
+        `).order('created_at',{ascending:false}).limit(100);
+        setUsuarios((data||[]).map(u=>({
+          ...u,
+          role: u.user_roles?.[0]?.roles?.name || 'user',
+        })));
+      }
+      if (t === 'contenido') {
+        const {data} = await sb.from('community_posts')
+          .select('id,text,created_at,user,likes')
+          .order('created_at',{ascending:false}).limit(60);
+        setPosts(data||[]);
+      }
+      if (t === 'reportes') {
+        const {data} = await sb.from('reports').select('*').order('created_at',{ascending:false}).limit(80);
+        setReportes(data||[]);
+      }
+      if (t === 'settings') {
+        const {data} = await sb.from('site_settings').select('*');
+        const map = {};
+        (data||[]).forEach(s=>{ map[s.key]=s.value; });
+        setSettings(map);
+      }
+      if (t === 'log') {
+        const {data} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(150);
+        setLogs(data||[]);
+      }
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+    setLoading(false);
+  }
+
+  // ── acciones usuarios ───────────────────────────────────
+  async function cambiarRol(userId, nuevoRol) {
+    if (!sb) return;
+    // eliminar roles anteriores
+    await sb.from('user_roles').delete().eq('user_id', userId);
+    const {data:rol} = await sb.from('roles').select('id').eq('name',nuevoRol).single();
+    if (rol) await sb.from('user_roles').insert({user_id:userId, role_id:rol.id, assigned_by:sbUser.id});
+    await sb.rpc('log_action',{p_action:'user.role_change',p_target_type:'user',p_target_id:userId,p_detail:{nuevo_rol:nuevoRol}});
+    setUsuarios(prev=>prev.map(u=>u.id===userId?{...u,role:nuevoRol}:u));
+    addToast({msg:`Rol cambiado a ${nuevoRol}`,type:'ok'});
+  }
+
+  async function suspenderUsuario(userId, suspended) {
+    if (!sb) return;
+    await sb.from('profiles').update({is_suspended:suspended, suspended_at:suspended?new Date().toISOString():null}).eq('id',userId);
+    await sb.rpc('log_action',{p_action:suspended?'user.suspend':'user.unsuspend',p_target_type:'user',p_target_id:userId});
+    setUsuarios(prev=>prev.map(u=>u.id===userId?{...u,is_suspended:suspended}:u));
+    addToast({msg:suspended?'Usuario suspendido':'Usuario reactivado',type:'ok'});
+  }
+
+  async function eliminarPost(postId) {
+    if (!sb) return;
+    if (!window.confirm('¿Eliminar este post?')) return;
+    await sb.from('community_posts').delete().eq('id',postId);
+    await sb.rpc('log_action',{p_action:'post.delete',p_target_type:'post',p_target_id:String(postId)});
+    setPosts(prev=>prev.filter(p=>p.id!==postId));
+    addToast({msg:'Post eliminado',type:'ok'});
+  }
+
+  async function resolverReporte(reportId, status) {
+    if (!sb) return;
+    await sb.from('reports').update({status, resolved_by:sbUser.id, resolved_at:new Date().toISOString()}).eq('id',reportId);
+    await sb.rpc('log_action',{p_action:'report.'+status,p_target_type:'report',p_target_id:reportId});
+    setReportes(prev=>prev.map(r=>r.id===reportId?{...r,status}:r));
+    addToast({msg:status==='resolved'?'✅ Reporte resuelto':'Reporte descartado',type:'ok'});
+  }
+
+  async function guardarSettings() {
+    if (!sb) return;
+    setSavingSet(true);
+    try {
+      const rows = Object.entries(settings).map(([key,value])=>({key,value,updated_by:sbUser.id,updated_at:new Date().toISOString()}));
+      await sb.from('site_settings').upsert(rows,{onConflict:'key'});
+      await sb.rpc('log_action',{p_action:'settings.update',p_target_type:'setting',p_detail:{keys:Object.keys(settings)}});
+      addToast({msg:'✅ Configuración guardada',type:'ok'});
+    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+    setSavingSet(false);
+  }
+
+  // ── GUARD: no logueado ──────────────────────────────────
+  if (checking) return (
+    <div style={{textAlign:'center',padding:60,color:'var(--tx3)'}}>
+      <div style={{fontSize:28,marginBottom:10,animation:'pulse 1.4s infinite'}}>🔐</div>
+      <div>Verificando permisos…</div>
+    </div>
+  );
+
+  if (!sbUser) return (
+    <div style={{textAlign:'center',padding:60}}>
+      <div style={{fontSize:40,marginBottom:12}}>🔒</div>
+      <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,marginBottom:8}}>Acceso restringido</div>
+      <div style={{color:'var(--tx2)',fontSize:13}}>Iniciá sesión con tu cuenta de administrador</div>
+    </div>
+  );
+
+  if (!myRole || !['admin','moderator'].includes(myRole)) return (
+    <div style={{textAlign:'center',padding:60}}>
+      <div style={{fontSize:40,marginBottom:12}}>🚫</div>
+      <div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,marginBottom:8}}>Sin permisos</div>
+      <div style={{color:'var(--tx2)',fontSize:13,marginBottom:16}}>Tu cuenta no tiene permisos de administrador.</div>
+      <div style={{background:'var(--cel-xl)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'12px 16px',fontSize:12,color:'var(--tx2)',maxWidth:380,margin:'0 auto',textAlign:'left'}}>
+        <strong>¿Sos el dueño del sitio?</strong><br/>
+        Andá a Supabase → SQL Editor y ejecutá:<br/>
+        <code style={{background:'var(--bg)',padding:'4px 8px',borderRadius:4,display:'block',marginTop:6,fontSize:11}}>
+          select public.set_first_admin('tu@email.com');
+        </code>
+      </div>
+    </div>
+  );
+
+  const tabsVisibles = ADMIN_TABS.filter(t=>t.roles.includes(myRole));
+  const fmtDate = d => d ? new Date(d).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '—';
+  const roleColor = r => ({admin:'var(--red)',moderator:'#F59E0B',user:'#16A34A'}[r]||'#888');
+
+  // ── RENDER ──────────────────────────────────────────────
+  return (
+    <div>
+
+      {/* HEADER */}
+      <div style={{background:'linear-gradient(135deg,#0D0D0D,#1A1A2E,#2D1B69)',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12,position:'relative',overflow:'hidden'}}>
+        <div style={{position:'absolute',top:0,right:0,width:160,height:160,borderRadius:'50%',background:'rgba(255,255,255,.05)',transform:'translate(50px,-50px)'}}/>
+        <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,.12)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:22,flexShrink:0}}>🛡️</div>
+        <div style={{flex:1}}>
+          <div style={{fontFamily:'var(--fd)',fontSize:19,fontWeight:700}}>Panel de Administración</div>
+          <div style={{fontSize:11,opacity:.75}}>Tribuna Libre · {myRole === 'admin' ? '👑 Admin' : '🔧 Moderador'} · {sbUser?.email}</div>
+        </div>
+        <button className="btn btn-sm" style={{background:'rgba(255,255,255,.12)',border:'1.5px solid rgba(255,255,255,.3)',color:'white',borderRadius:20,flexShrink:0}}
+          onClick={()=>loadTab(tab)}>⟳ Actualizar</button>
+      </div>
+
+      {/* TABS */}
+      <div style={{display:'flex',background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',marginBottom:16,overflowX:'auto',scrollbarWidth:'none'}}>
+        {tabsVisibles.map(t=>(
+          <div key={t.id} onClick={()=>setTab(t.id)}
+            style={{padding:'8px 12px',whiteSpace:'nowrap',cursor:'pointer',fontSize:12,fontWeight:700,flexShrink:0,transition:'.15s',
+              borderBottom:tab===t.id?'2.5px solid var(--red)':'2.5px solid transparent',
+              color:tab===t.id?'var(--red)':'var(--tx3)'}}>
+            {t.l}
+          </div>
+        ))}
+      </div>
+
+      {loading && (
+        <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>
+          <div style={{fontSize:24,marginBottom:8,animation:'pulse 1.4s infinite'}}>⟳</div>
+          Cargando datos…
+        </div>
+      )}
+
+      {/* ── TAB: OVERVIEW ── */}
+      {tab==='overview' && !loading && (
+        <div>
+          {/* Stats cards */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(130px,1fr))',gap:10,marginBottom:16}}>
+            {[
+              {l:'Usuarios',    v:stats.users,    em:'👥', col:'var(--cel-d)'},
+              {l:'Posts',       v:stats.posts,    em:'📝', col:'#16A34A'},
+              {l:'Comentarios', v:stats.comments, em:'💬', col:'#F59E0B'},
+              {l:'Reportes',    v:stats.reports,  em:'🚨', col:'var(--red)'},
+              {l:'Votos VAR',   v:stats.votos,    em:'📺', col:'#7C3AED'},
+            ].map(s=>(
+              <div key={s.l} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 12px',textAlign:'center'}}>
+                <div style={{fontSize:22,marginBottom:4}}>{s.em}</div>
+                <div style={{fontFamily:'var(--fd)',fontSize:22,fontWeight:700,color:s.col}}>{s.v.toLocaleString('es-AR')}</div>
+                <div style={{fontSize:10,color:'var(--tx3)',marginTop:2}}>{s.l}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Últimas acciones */}
+          <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px'}}>
+            <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>📋 Actividad reciente</div>
+            {logs.length === 0 && <div style={{fontSize:12,color:'var(--tx3)',textAlign:'center',padding:'12px 0'}}>Sin actividad registrada aún</div>}
+            {logs.map(l=>(
+              <div key={l.id} style={{display:'flex',gap:10,alignItems:'center',padding:'7px 0',borderBottom:'1px solid var(--br)'}}>
+                <div style={{width:32,height:32,borderRadius:'50%',background:'var(--cel-xl)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:13,fontWeight:700,color:'var(--cel-d)',fontFamily:'var(--fd)'}}>
+                  {(l.actor_name||'?')[0].toUpperCase()}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:12,fontWeight:600}}>{l.actor_name||'sistema'} <span style={{fontWeight:400,color:'var(--tx3)'}}>{l.action}</span></div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtDate(l.created_at)}</div>
+                </div>
+                <span style={{fontSize:9,background:'var(--cel-xl)',color:'var(--cel-d)',padding:'2px 7px',borderRadius:20,fontWeight:700,flexShrink:0}}>{l.target_type||'—'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: USUARIOS ── */}
+      {tab==='usuarios' && !loading && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>👥 Usuarios ({usuarios.length})</div>
+          {usuarios.length === 0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin usuarios cargados</div>}
+          {usuarios.map(u=>(
+            <div key={u.id} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'11px 14px',marginBottom:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+              <div style={{width:34,height:34,borderRadius:'50%',background:'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'white',fontFamily:'var(--fd)',position:'relative'}}>
+                {(u.display_name||u.username||'?')[0].toUpperCase()}
+                {u.is_suspended && <div style={{position:'absolute',bottom:-2,right:-2,width:12,height:12,borderRadius:'50%',background:'var(--red)',border:'2px solid var(--white)',fontSize:7,display:'flex',alignItems:'center',justifyContent:'center',color:'white'}}>✕</div>}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:6}}>
+                  {u.display_name||u.username||'—'}
+                  <span style={{background:roleColor(u.role),color:'white',borderRadius:20,padding:'1px 7px',fontSize:9,fontWeight:700}}>{u.role}</span>
+                  {u.is_suspended && <span style={{background:'var(--red)',color:'white',borderRadius:20,padding:'1px 7px',fontSize:9,fontWeight:700}}>SUSPENDIDO</span>}
+                </div>
+                <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtDate(u.created_at)} · Rep {u.reputation||0}</div>
+              </div>
+              <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap'}}>
+                {/* Cambiar rol */}
+                <select value={u.role} onChange={e=>cambiarRol(u.id,e.target.value)}
+                  style={{fontSize:10,padding:'3px 6px',borderRadius:'var(--rs)',border:'1px solid var(--br)',background:'var(--white)',cursor:'pointer',color:'var(--tx)'}}>
+                  <option value="user">user</option>
+                  <option value="moderator">moderator</option>
+                  {myRole==='admin' && <option value="admin">admin</option>}
+                </select>
+                <button className="btn btn-sm btn-o" style={{fontSize:10,padding:'3px 9px'}}
+                  onClick={()=>suspenderUsuario(u.id,!u.is_suspended)}>
+                  {u.is_suspended?'Reactivar':'Suspender'}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── TAB: CONTENIDO ── */}
+      {tab==='contenido' && !loading && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>📝 Posts de la comunidad ({posts.length})</div>
+          {posts.length === 0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin posts</div>}
+          {posts.map(p=>(
+            <div key={p.id} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:8,display:'flex',gap:10,alignItems:'flex-start'}}>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:3}}>{p.user||'anónimo'} <span style={{fontSize:10,color:'var(--tx3)',fontWeight:400}}>· {fmtDate(p.created_at)}</span></div>
+                <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{p.text}</div>
+                <div style={{fontSize:10,color:'var(--tx3)',marginTop:3}}>🔥 {p.likes||0} likes</div>
+              </div>
+              <button onClick={()=>eliminarPost(p.id)}
+                style={{background:'rgba(192,57,43,.1)',border:'1px solid rgba(192,57,43,.3)',color:'var(--red)',borderRadius:'var(--rs)',padding:'4px 10px',fontSize:11,cursor:'pointer',flexShrink:0}}>
+                🗑 Borrar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── TAB: REPORTES ── */}
+      {tab==='reportes' && !loading && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>
+            🚨 Reportes pendientes ({reportes.filter(r=>r.status==='pending').length})
+          </div>
+          {reportes.length===0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin reportes 🎉</div>}
+          {reportes.map(r=>(
+            <div key={r.id} style={{background:'var(--white)',border:`1px solid ${r.status==='pending'?'rgba(192,57,43,.3)':'var(--br)'}`,borderRadius:'var(--r)',padding:'11px 14px',marginBottom:8,opacity:r.status!=='pending'?.6:1}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6,gap:8}}>
+                <div>
+                  <span style={{fontSize:10,padding:'2px 8px',borderRadius:20,fontWeight:700,marginRight:6,
+                    background:r.status==='pending'?'rgba(192,57,43,.12)':r.status==='resolved'?'rgba(22,163,74,.12)':'var(--cel-xl)',
+                    color:r.status==='pending'?'var(--red)':r.status==='resolved'?'#16A34A':'var(--tx3)'
+                  }}>{r.status}</span>
+                  <span style={{fontSize:10,color:'var(--tx3)'}}>{r.content_type} · {fmtDate(r.created_at)}</span>
+                </div>
+                {r.status==='pending' && (
+                  <div style={{display:'flex',gap:6}}>
+                    <button onClick={()=>resolverReporte(r.id,'resolved')}
+                      style={{background:'rgba(22,163,74,.1)',border:'1px solid rgba(22,163,74,.3)',color:'#16A34A',borderRadius:'var(--rs)',padding:'3px 9px',fontSize:11,cursor:'pointer'}}>
+                      ✅ Resolver
+                    </button>
+                    <button onClick={()=>resolverReporte(r.id,'dismissed')}
+                      style={{background:'var(--cel-xl)',border:'1px solid var(--br)',color:'var(--tx3)',borderRadius:'var(--rs)',padding:'3px 9px',fontSize:11,cursor:'pointer'}}>
+                      Descartar
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div style={{fontSize:12,fontWeight:600,marginBottom:2}}>{r.reason}</div>
+              {r.detail && <div style={{fontSize:11,color:'var(--tx2)'}}>{r.detail}</div>}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── TAB: SETTINGS ── */}
+      {tab==='settings' && !loading && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:14}}>⚙️ Configuración global del sitio</div>
+          {[
+            {key:'site_name',        label:'Nombre del sitio',       type:'text'},
+            {key:'site_tagline',     label:'Lema / tagline',          type:'text'},
+            {key:'logo_url',         label:'URL del logo',            type:'text'},
+            {key:'primary_color',    label:'Color primario',          type:'color'},
+            {key:'secondary_color',  label:'Color secundario',        type:'color'},
+            {key:'seo_description',  label:'Descripción SEO',         type:'textarea'},
+            {key:'footer_text',      label:'Texto del footer',        type:'text'},
+            {key:'allow_registration',label:'Permitir registros',     type:'select', opts:['true','false']},
+            {key:'maintenance_mode', label:'Modo mantenimiento',      type:'select', opts:['false','true']},
+          ].map(f=>(
+            <div key={f.key} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:8}}>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:5}}>{f.label}</label>
+              {f.type==='textarea' ? (
+                <textarea value={settings[f.key]||''} onChange={e=>setSettings(s=>({...s,[f.key]:e.target.value}))}
+                  style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,resize:'vertical',minHeight:60,boxSizing:'border-box',background:'var(--bg)',color:'var(--tx)'}}/>
+              ) : f.type==='select' ? (
+                <select value={settings[f.key]||''} onChange={e=>setSettings(s=>({...s,[f.key]:e.target.value}))}
+                  style={{border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 10px',fontSize:12,background:'var(--white)',color:'var(--tx)',width:'100%'}}>
+                  {f.opts.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>
+              ) : f.type==='color' ? (
+                <div style={{display:'flex',alignItems:'center',gap:10}}>
+                  <input type="color" value={settings[f.key]||'#000000'} onChange={e=>setSettings(s=>({...s,[f.key]:e.target.value}))}
+                    style={{width:40,height:32,border:'1px solid var(--br)',borderRadius:'var(--rs)',cursor:'pointer',padding:2}}/>
+                  <input type="text" value={settings[f.key]||''} onChange={e=>setSettings(s=>({...s,[f.key]:e.target.value}))}
+                    style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 10px',fontSize:12,background:'var(--bg)',color:'var(--tx)'}}/>
+                </div>
+              ) : (
+                <input type="text" value={settings[f.key]||''} onChange={e=>setSettings(s=>({...s,[f.key]:e.target.value}))}
+                  style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,boxSizing:'border-box',background:'var(--bg)',color:'var(--tx)'}}/>
+              )}
+            </div>
+          ))}
+          <button onClick={guardarSettings} disabled={savingSet}
+            style={{width:'100%',background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:12,fontFamily:'var(--fd)',fontSize:14,fontWeight:700,cursor:'pointer',marginTop:4}}>
+            {savingSet?'Guardando…':'💾 Guardar configuración'}
+          </button>
+        </div>
+      )}
+
+      {/* ── TAB: ACTIVITY LOG ── */}
+      {tab==='log' && !loading && (
+        <div>
+          <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>📋 Log de actividad ({logs.length})</div>
+          {logs.length===0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin actividad registrada</div>}
+          {logs.map(l=>(
+            <div key={l.id} style={{display:'flex',gap:10,alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--br)'}}>
+              <div style={{width:30,height:30,borderRadius:'50%',background:'rgba(139,92,246,.12)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700,color:'#7C3AED',fontFamily:'var(--fd)'}}>
+                {(l.actor_name||'?')[0].toUpperCase()}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:11,color:'var(--tx)'}}><strong>{l.actor_name||'sistema'}</strong> · <span style={{color:'var(--tx3)'}}>{l.action}</span></div>
+                <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtDate(l.created_at)}{l.target_id ? ` · ${l.target_type} ${l.target_id.slice(0,8)}…` : ''}</div>
+              </div>
+              {l.detail && Object.keys(l.detail).length>0 && (
+                <span style={{fontSize:9,color:'var(--tx3)',background:'var(--cel-xl)',padding:'2px 7px',borderRadius:20,maxWidth:100,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                  {JSON.stringify(l.detail).slice(0,40)}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+    </div>
+  );
+}
+
 function ComunidadPage({user,addToast,onNav}){
   const userId=user?.isGuest===false?(user.displayName||user.username||'user'):'guest';
   const {perfil,sumarPuntos,feedback}=useCmPuntos(userId);
@@ -6540,6 +6970,7 @@ const NAV = [
   {id:'red',       l:'Red de Periodismo',     icon:'Net'},
   {id:'podcast',   l:'Podcast',               icon:'Mic'},
   {id:'var',       l:'El VAR',                icon:'Check'},
+  {id:'admin',     l:'🛡️ Admin',             icon:'Profile'},
   {id:'profile',   l:'Mi perfil',             icon:'Profile'},
 ];
 const MOBILE_NAV = [
@@ -6560,6 +6991,7 @@ const FULL_MOBILE_MENU = [
   {id:'podcast',   l:'Podcast',              em:'🎙️', icon:'Mic'},
   {id:'live',      l:'En Vivo',              em:'🔴', icon:'Live'},
   {id:'var',       l:'El VAR',               em:'💬', icon:'Forum'},
+  {id:'admin',     l:'Admin',                em:'🛡️', icon:'Profile'},
   {id:'profile',   l:'Mi Perfil',            em:'👤', icon:'Profile'},
 ];
 
@@ -7316,6 +7748,7 @@ function App() {
             {page==='podcast'   && <PodcastPage addToast={addToast} user={user}/>}
             {page==='live'      && <EnVivoPage addToast={addToast}/>}
             {page==='var'       && <VarPage user={user} addToast={addToast}/>}
+            {page==='admin'     && <AdminPage user={user} addToast={addToast}/>}
             {page==='profile' && (
               <div>
                 <div style={{background:'linear-gradient(135deg,var(--cel-d),var(--cel))',borderRadius:'var(--rl)',padding:24,textAlign:'center',marginBottom:16}}>
