@@ -2934,138 +2934,290 @@ function DebatesTab({user,addToast}){
 
 // ══════════════════════════════════════════════════════════════
 // EL VAR — Jugadas polémicas · Votación · Veredicto · Ranking
+// 100% Supabase: jugadas, votos, comentarios y realtime
 // ══════════════════════════════════════════════════════════════
 const DEPORTES_FILTER = ['Todos','Fútbol','Rugby','Tenis','Básquet','Hockey','Fórmula 1'];
-const VERDICT_MIN_VOTES = 200; // umbral para mostrar veredicto
+const VERDICT_MIN_VOTES = 200;
+const SPORT_COLOR = {'Fútbol':'#E8262A','Rugby':'#16A34A','Tenis':'#F59E0B','Básquet':'#0057A8','Hockey':'#7C3AED','Fórmula 1':'#FF4500'};
+const SPORT_EM    = {'Fútbol':'⚽','Rugby':'🏉','Tenis':'🎾','Básquet':'🏀','Hockey':'🏑','Fórmula 1':'🏎️'};
+
+// Genera/recupera session ID para guests (permite votar sin cuenta)
+function getVoterKey() {
+  const sbUser = window.__supabaseUser;
+  if (sbUser?.id) return sbUser.id;
+  let sid = localStorage.getItem('tl_session_id');
+  if (!sid) { sid = Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('tl_session_id',sid); }
+  return sid;
+}
+
+function mapJugadaDB(j) {
+  return {
+    id:j.id, sport:j.sport, em:j.em||'⚽', titulo:j.titulo,
+    desc:j.descripcion||'', videoUrl:j.video_url||'',
+    pregunta:j.pregunta||'¿Cuál es tu veredicto?',
+    opA:j.op_a, opB:j.op_b,
+    competencia:j.competencia||'', fecha:j.fecha_text||'Reciente',
+    isStatic:j.is_static||false,
+  };
+}
 
 function VarPage({ user, addToast }) {
-  const sb     = window.__supabase;
-  const isGuest = !window.__supabaseUser;
+  const sb      = window.__supabase;
+  const sbUser  = window.__supabaseUser;
+  const isGuest = !sbUser;
 
-  // ── estado principal ──────────────────────────────────────
-  const [jugadas,   setJugadas]   = useState(() => {
-    // merge con votos guardados en localStorage
-    const saved = (() => { try { return JSON.parse(localStorage.getItem('tl_var_votos')||'{}'); } catch(e){ return {}; } })();
-    return VAR_JUGADAS.map(j => ({
-      ...j,
-      votosA: (saved[j.id]?.votosA ?? j.votosA),
-      votosB: (saved[j.id]?.votosB ?? j.votosB),
-      comentarios: [...j.comentarios],
-    }));
-  });
-  const [miVoto,    setMiVoto]    = useState(() => { try { return JSON.parse(localStorage.getItem('tl_var_mivoto')||'{}'); } catch(e){ return {}; } });
-  const [selId,     setSelId]     = useState(null);
-  const [filtro,    setFiltro]    = useState('Todos');
-  const [sort,      setSort]      = useState('recientes');  // recientes | votos | sinresolver | veredicto
-  const [comentando,setComentando]= useState({});           // {[jugadaId]: texto}
-  const [showSubir, setShowSubir] = useState(false);
-  const [nueva,     setNueva]     = useState({titulo:'',deporte:'Fútbol',desc:'',pregunta:'',opA:'',opB:'',videoUrl:''});
-  const [subiendoV, setSubiendoV] = useState(false);
+  // ── refs ──────────────────────────────────────────────────
+  const voterKeyRef  = useRef(getVoterKey());
+  const realtimeRef  = useRef(null);
 
-  const selJugada = jugadas.find(j => j.id === selId);
+  // ── estado ────────────────────────────────────────────────
+  const [jugadas,    setJugadas]    = useState(VAR_JUGADAS.map(mapJugadaDB.bind(null,
+    // Convertir VAR_JUGADAS al mismo formato que DB (tiene votosA/B nativos)
+    // Usamos una pequeña normalización inline
+    (() => ({op_a:'',op_b:'',is_static:true}))()
+  )));
+  const [voteCounts, setVoteCounts] = useState({});       // {[id]:{A:n,B:n}}
+  const [miVoto,     setMiVoto]     = useState(() => { try{return JSON.parse(localStorage.getItem('tl_var_mivoto')||'{}')}catch(e){return{}} });
+  const [comentarios,setComentarios]= useState({});       // {[jugadaId]: array}
+  const [loadingInit,setLoadingInit]= useState(false);
+  const [loadingCom, setLoadingCom] = useState(false);
+  const [selId,      setSelId]      = useState(null);
+  const [filtro,     setFiltro]     = useState('Todos');
+  const [sort,       setSort]       = useState('recientes');
+  const [comentando, setComentando] = useState({});
+  const [showSubir,  setShowSubir]  = useState(false);
+  const [nueva,      setNueva]      = useState({titulo:'',deporte:'Fútbol',desc:'',pregunta:'',opA:'',opB:'',videoUrl:''});
+  const [subiendoV,  setSubiendoV]  = useState(false);
 
-  // ── persistir votos en localStorage ──────────────────────
-  function persistVotos(jugadasArr) {
-    const map = {};
-    jugadasArr.forEach(j => { map[j.id] = { votosA: j.votosA, votosB: j.votosB }; });
-    try { localStorage.setItem('tl_var_votos', JSON.stringify(map)); } catch(e) {}
+  // inicializar jugadas desde los datos estáticos correctamente
+  useEffect(() => {
+    setJugadas(VAR_JUGADAS.map(j => ({
+      id:j.id, sport:j.sport, em:j.em, titulo:j.titulo,
+      desc:j.desc, videoUrl:j.videoUrl, pregunta:j.pregunta,
+      opA:j.opA, opB:j.opB, competencia:j.competencia,
+      fecha:j.fecha, isStatic:true,
+    })));
+    if (sb) initSupabase();
+    return () => { if (realtimeRef.current && sb) sb.removeChannel(realtimeRef.current); };
+  }, []);
+
+  // cargar comentarios cuando se abre una jugada
+  useEffect(() => {
+    if (selId && sb && !comentarios[selId]) cargarComentarios(selId);
+  }, [selId]);
+
+  // ── Supabase: init ────────────────────────────────────────
+  async function initSupabase() {
+    setLoadingInit(true);
+    try {
+      await seedStaticData();
+      await Promise.all([cargarJugadasDB(), cargarMisVotos()]);
+      suscribirRealtime();
+    } catch(e) { console.warn('VAR init:', e.message); }
+    setLoadingInit(false);
+  }
+
+  async function seedStaticData() {
+    const { count } = await sb.from('var_jugadas').select('id',{count:'exact',head:true}).eq('is_static',true);
+    if ((count||0) === 0) {
+      const rows = VAR_JUGADAS.map(j => ({
+        id:j.id, sport:j.sport, em:j.em, titulo:j.titulo,
+        descripcion:j.desc, video_url:j.videoUrl, pregunta:j.pregunta,
+        op_a:j.opA, op_b:j.opB, competencia:j.competencia,
+        fecha_text:j.fecha, is_static:true,
+      }));
+      await sb.from('var_jugadas').upsert(rows, {onConflict:'id'});
+    }
+  }
+
+  async function cargarJugadasDB() {
+    const [{ data:jDB }, { data:vDB }] = await Promise.all([
+      sb.from('var_jugadas').select('*').order('created_at',{ascending:false}),
+      sb.from('var_votos').select('jugada_id,opcion'),
+    ]);
+    // Contar votos
+    const counts = {};
+    (vDB||[]).forEach(v => {
+      if (!counts[v.jugada_id]) counts[v.jugada_id]={A:0,B:0};
+      counts[v.jugada_id][v.opcion]++;
+    });
+    setVoteCounts(counts);
+    if (jDB?.length) setJugadas(jDB.map(mapJugadaDB));
+  }
+
+  async function cargarMisVotos() {
+    const { data } = await sb.from('var_votos').select('jugada_id,opcion').eq('voter_key', voterKeyRef.current);
+    if (data?.length) {
+      const v = {}; data.forEach(x=>{ v[x.jugada_id]=x.opcion; });
+      const merged = {...miVoto,...v};
+      setMiVoto(merged);
+      try{localStorage.setItem('tl_var_mivoto',JSON.stringify(merged))}catch(e){}
+    }
+  }
+
+  async function cargarComentarios(jugadaId) {
+    setLoadingCom(true);
+    const { data } = await sb.from('var_comentarios').select('*').eq('jugada_id',jugadaId).order('created_at',{ascending:true});
+    if (data) {
+      setComentarios(prev=>({...prev,[jugadaId]:data.map(c=>({
+        id:c.id, u:c.user_name, av:(c.user_name||'?')[0].toUpperCase(),
+        col:'#4A90D9', texto:c.texto, likes:c.likes||0,
+        ts:new Date(c.created_at).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+      }))}));
+    }
+    setLoadingCom(false);
+  }
+
+  function suscribirRealtime() {
+    realtimeRef.current = sb.channel('var-live')
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'var_votos'},({new:v})=>{
+        setVoteCounts(prev=>{
+          const cur=prev[v.jugada_id]||{A:0,B:0};
+          return {...prev,[v.jugada_id]:{...cur,[v.opcion]:cur[v.opcion]+1}};
+        });
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'var_comentarios'},({new:c})=>{
+        setComentarios(prev=>{
+          const cur=prev[c.jugada_id]||[];
+          if(cur.find(x=>x.id===c.id)) return prev;
+          return {...prev,[c.jugada_id]:[...cur,{
+            id:c.id, u:c.user_name, av:(c.user_name||'?')[0].toUpperCase(),
+            col:'#4A90D9', texto:c.texto, likes:c.likes||0, ts:'ahora',
+          }]};
+        });
+      })
+      .on('postgres_changes',{event:'INSERT',schema:'public',table:'var_jugadas'},({new:j})=>{
+        setJugadas(prev=>{ if(prev.find(x=>x.id===j.id)) return prev; return [mapJugadaDB(j),...prev]; });
+      })
+      .on('postgres_changes',{event:'UPDATE',schema:'public',table:'var_comentarios'},({new:c})=>{
+        setComentarios(prev=>({...prev,[c.jugada_id]:(prev[c.jugada_id]||[]).map(x=>x.id===c.id?{...x,likes:c.likes}:x)}));
+      })
+      .subscribe();
   }
 
   // ── votar ─────────────────────────────────────────────────
-  async function votar(jugadaId, opcion) { // opcion: 'A' | 'B'
-    if (miVoto[jugadaId]) { addToast({msg:'Ya votaste en esta jugada', type:'warn'}); return; }
-    const nuevosMiVoto = { ...miVoto, [jugadaId]: opcion };
-    setMiVoto(nuevosMiVoto);
-    try { localStorage.setItem('tl_var_mivoto', JSON.stringify(nuevosMiVoto)); } catch(e) {}
-
-    const updated = jugadas.map(j => {
-      if (j.id !== jugadaId) return j;
-      return { ...j, votosA: j.votosA + (opcion==='A'?1:0), votosB: j.votosB + (opcion==='B'?1:0) };
-    });
-    setJugadas(updated);
-    persistVotos(updated);
-
+  async function votar(jugadaId, opcion) {
+    if (miVoto[jugadaId]) { addToast({msg:'Ya votaste en esta jugada',type:'warn'}); return; }
+    // Optimistic
+    const nv={...miVoto,[jugadaId]:opcion};
+    setMiVoto(nv);
+    try{localStorage.setItem('tl_var_mivoto',JSON.stringify(nv))}catch(e){}
+    setVoteCounts(prev=>{ const c=prev[jugadaId]||{A:0,B:0}; return {...prev,[jugadaId]:{...c,[opcion]:c[opcion]+1}}; });
     if (sb) {
-      await sb.from('var_votos').insert({ jugada_id: jugadaId, opcion, user_id: window.__supabaseUser?.id || 'guest' });
+      const {error} = await sb.from('var_votos').insert({
+        jugada_id:jugadaId, voter_key:voterKeyRef.current, opcion,
+        user_id:sbUser?.id||null, user_name:sbUser?.displayName||'Invitado',
+      });
+      if (error?.code==='23505') {
+        // Duplicado — revertir
+        const rev={...nv}; delete rev[jugadaId]; setMiVoto(rev);
+        setVoteCounts(prev=>{ const c=prev[jugadaId]||{A:0,B:0}; return {...prev,[jugadaId]:{...c,[opcion]:Math.max(0,c[opcion]-1)}}; });
+        addToast({msg:'Ya votaste en esta jugada',type:'warn'}); return;
+      }
     }
-    addToast({ msg: opcion==='A' ? '✅ Votaste: "'+jugadas.find(j=>j.id===jugadaId)?.opA+'"' : '✅ Votaste: "'+jugadas.find(j=>j.id===jugadaId)?.opB+'"', type:'ok' });
+    const j=jugadas.find(x=>x.id===jugadaId);
+    addToast({msg:`✅ Votaste: "${opcion==='A'?j?.opA:j?.opB}"`,type:'ok'});
   }
 
   // ── comentar ──────────────────────────────────────────────
   async function enviarComentario(jugadaId) {
-    const txt = (comentando[jugadaId]||'').trim();
+    const txt=(comentando[jugadaId]||'').trim();
     if (!txt) return;
-    if (isGuest) { addToast({msg:'Iniciá sesión para comentar',type:'warn'}); return; }
-    const nombre = window.__supabaseUser?.displayName || 'Usuario';
-    const newCom = { id: Date.now(), u: nombre, av: nombre[0].toUpperCase(), col:'#4A90D9', texto: txt, likes:0, ts:'ahora' };
-    setJugadas(prev => prev.map(j => j.id!==jugadaId ? j : {...j, comentarios:[...j.comentarios, newCom]}));
-    setComentando(prev => ({...prev, [jugadaId]:''}));
-    if (sb) await sb.from('var_comentarios').insert({ jugada_id:jugadaId, user:nombre, texto:txt });
-    addToast({msg:'💬 Comentario publicado', type:'ok'});
-  }
-
-  // ── subir nueva jugada ────────────────────────────────────
-  async function subirJugada() {
-    if (!nueva.titulo || !nueva.opA || !nueva.opB) { addToast({msg:'Completá título y opciones', type:'warn'}); return; }
-    setSubiendoV(true);
-    const deporteData = DEPORTES_FILTER.slice(1).find(d=>d===nueva.deporte) || 'Fútbol';
-    const emMap = {'Fútbol':'⚽','Rugby':'🏉','Tenis':'🎾','Básquet':'🏀','Hockey':'🏑','Fórmula 1':'🏎️'};
-    const j = {
-      id: 'v'+Date.now(), sport:deporteData, em:emMap[deporteData]||'⚽',
-      titulo:nueva.titulo, desc:nueva.desc, videoUrl:nueva.videoUrl||'',
-      pregunta:nueva.pregunta||'¿Cuál es tu veredicto?', opA:nueva.opA, opB:nueva.opB,
-      votosA:0, votosB:0, fecha:'Ahora', competencia:'Subido por la comunidad', comentarios:[],
-    };
+    if (isGuest){addToast({msg:'Iniciá sesión para comentar',type:'warn'});return;}
+    const nombre=sbUser?.displayName||'Usuario';
+    setComentando(prev=>({...prev,[jugadaId]:''}));
     if (sb) {
-      const { data } = await sb.from('var_jugadas').insert({...j, user: window.__supabaseUser?.displayName||'anon'}).select().single();
-      if (data) j.id = data.id;
+      const {data,error}=await sb.from('var_comentarios').insert({
+        jugada_id:jugadaId, user_id:sbUser.id, user_name:nombre, texto:txt,
+      }).select().single();
+      if (!error && data) {
+        // El realtime lo va a capturar, pero por las dudas lo agregamos local
+        setComentarios(prev=>{
+          const cur=prev[jugadaId]||[];
+          if(cur.find(c=>c.id===data.id)) return prev;
+          return {...prev,[jugadaId]:[...cur,{id:data.id,u:nombre,av:nombre[0].toUpperCase(),col:'#4A90D9',texto:txt,likes:0,ts:'ahora'}]};
+        });
+      }
+    } else {
+      setComentarios(prev=>({...prev,[jugadaId]:[...(prev[jugadaId]||[]),{id:Date.now(),u:nombre,av:nombre[0].toUpperCase(),col:'#4A90D9',texto:txt,likes:0,ts:'ahora'}]}));
     }
-    setJugadas(prev => [j, ...prev]);
+    addToast({msg:'💬 Comentario publicado',type:'ok'});
+  }
+
+  // ── like comentario ───────────────────────────────────────
+  async function likeComentario(jugadaId, comId) {
+    // Optimistic
+    setComentarios(prev=>({...prev,[jugadaId]:(prev[jugadaId]||[]).map(c=>c.id!==comId?c:{...c,likes:(c.likes||0)+1})}));
+    if (sb) {
+      const {data} = await sb.rpc('var_like_comentario',{com_id:comId, vkey:voterKeyRef.current});
+      if (data?.msg==='ya_likeaste') {
+        // Revertir
+        setComentarios(prev=>({...prev,[jugadaId]:(prev[jugadaId]||[]).map(c=>c.id!==comId?c:{...c,likes:Math.max(0,(c.likes||1)-1)})}));
+        addToast({msg:'Ya le diste like a este comentario',type:'warn'});
+      }
+    }
+  }
+
+  // ── subir jugada ──────────────────────────────────────────
+  async function subirJugada() {
+    if (!nueva.titulo||!nueva.opA||!nueva.opB){addToast({msg:'Completá título y las dos opciones',type:'warn'});return;}
+    setSubiendoV(true);
+    const jData={
+      sport:nueva.deporte, em:SPORT_EM[nueva.deporte]||'⚽',
+      titulo:nueva.titulo, descripcion:nueva.desc||null,
+      video_url:nueva.videoUrl||null,
+      pregunta:nueva.pregunta||'¿Cuál es tu veredicto?',
+      op_a:nueva.opA, op_b:nueva.opB,
+      competencia:'Subido por la comunidad',
+      fecha_text:'Recién subida', is_static:false,
+      user_id:sbUser?.id||null, user_name:sbUser?.displayName||'Invitado',
+    };
+    let newId='v'+Date.now();
+    if (sb) {
+      const {data,error}=await sb.from('var_jugadas').insert(jData).select().single();
+      if (error){addToast({msg:'Error: '+error.message,type:'err'});setSubiendoV(false);return;}
+      if (data) newId=data.id;
+      // El realtime lo va a agregar, pero por las dudas
+      setJugadas(prev=>{if(prev.find(x=>x.id===newId))return prev;return [mapJugadaDB({...jData,id:newId}),...prev];});
+    } else {
+      setJugadas(prev=>[{id:newId,sport:jData.sport,em:jData.em,titulo:jData.titulo,desc:jData.descripcion||'',videoUrl:jData.video_url||'',pregunta:jData.pregunta,opA:jData.op_a,opB:jData.op_b,competencia:jData.competencia,fecha:jData.fecha_text,isStatic:false},...prev]);
+    }
     setNueva({titulo:'',deporte:'Fútbol',desc:'',pregunta:'',opA:'',opB:'',videoUrl:''});
-    setShowSubir(false);
-    setSubiendoV(false);
-    setSelId(j.id);
-    addToast({msg:'📺 Jugada subida al VAR!', type:'ok'});
+    setShowSubir(false); setSubiendoV(false); setSelId(newId);
+    addToast({msg:'📺 ¡Jugada subida al VAR!',type:'ok'});
   }
 
-  // ── likeComentario ────────────────────────────────────────
-  function likeComentario(jugadaId, comId) {
-    setJugadas(prev => prev.map(j => j.id!==jugadaId ? j : {
-      ...j, comentarios: j.comentarios.map(c => c.id!==comId ? c : {...c, likes:(c.likes||0)+1})
-    }));
-  }
+  // ── helpers computed ──────────────────────────────────────
+  function getVA(j){ const base=j.isStatic?(VAR_JUGADAS.find(x=>x.id===j.id)?.votosA||0):0; return base+(voteCounts[j.id]?.A||0); }
+  function getVB(j){ const base=j.isStatic?(VAR_JUGADAS.find(x=>x.id===j.id)?.votosB||0):0; return base+(voteCounts[j.id]?.B||0); }
+  function pctA(j){ const t=getVA(j)+getVB(j); return t?Math.round(getVA(j)/t*100):50; }
+  function fmtV(v){ return v>=1000?(v/1000).toFixed(1)+'k':String(v); }
 
-  // ── veredicto ─────────────────────────────────────────────
   function getVeredicto(j) {
-    const total = j.votosA + j.votosB;
-    if (total < VERDICT_MIN_VOTES) return null;
-    const pct = j.votosA / total;
-    if (pct >= 0.7) return { texto: j.opA, icon:'✅', color:'var(--green,#16A34A)', fuerte:true };
-    if (pct <= 0.3) return { texto: j.opB, icon:'❌', color:'var(--red)', fuerte:true };
-    if (pct >= 0.55) return { texto: j.opA+' (ajustado)', icon:'⚖️', color:'#F59E0B', fuerte:false };
-    if (pct <= 0.45) return { texto: j.opB+' (ajustado)', icon:'⚖️', color:'#F59E0B', fuerte:false };
-    return { texto:'Dividido — sin consenso', icon:'⚖️', color:'#888', fuerte:false };
+    const va=getVA(j),vb=getVB(j),total=va+vb;
+    if (total<VERDICT_MIN_VOTES) return null;
+    const p=va/total;
+    if (p>=0.70) return {texto:j.opA,icon:'✅',color:'#16A34A',fuerte:true};
+    if (p<=0.30) return {texto:j.opB,icon:'❌',color:'var(--red)',fuerte:true};
+    if (p>=0.55) return {texto:j.opA+' (leve)',icon:'⚖️',color:'#F59E0B',fuerte:false};
+    if (p<=0.45) return {texto:j.opB+' (leve)',icon:'⚖️',color:'#F59E0B',fuerte:false};
+    return {texto:'Dividido — sin consenso',icon:'⚖️',color:'#888',fuerte:false};
   }
 
-  // ── filtrar y ordenar ─────────────────────────────────────
+  const selJugada      = jugadas.find(j=>j.id===selId);
+  const selComentarios = selId?(comentarios[selId]||[]):[];
+  const totalVotos     = jugadas.reduce((s,j)=>s+getVA(j)+getVB(j),0);
   const jugadasFiltradas = jugadas
-    .filter(j => filtro==='Todos' || j.sport===filtro)
-    .sort((a,b) => {
-      if (sort==='votos')       return (b.votosA+b.votosB) - (a.votosA+a.votosB);
-      if (sort==='sinresolver') return getVeredicto(a)!==null ? 1 : -1;
-      if (sort==='veredicto')   return getVeredicto(b)!==null ? -1 : 1;
-      return 0; // recientes: orden natural
+    .filter(j=>filtro==='Todos'||j.sport===filtro)
+    .sort((a,b)=>{
+      if(sort==='votos')       return (getVA(b)+getVB(b))-(getVA(a)+getVB(a));
+      if(sort==='sinresolver') return getVeredicto(a)?1:-1;
+      if(sort==='veredicto')   return getVeredicto(b)?-1:1;
+      return 0;
     });
+  const ranking=[...jugadas].sort((a,b)=>(getVA(b)+getVB(b))-(getVA(a)+getVB(a))).slice(0,3);
 
-  // ── ranking top 3 ─────────────────────────────────────────
-  const ranking = [...jugadas].sort((a,b)=>(b.votosA+b.votosB)-(a.votosA+a.votosB)).slice(0,3);
-
-  // ── helpers UI ────────────────────────────────────────────
-  const pctA = j => { const t=j.votosA+j.votosB; return t?Math.round(j.votosA/t*100):50; };
-  const fmtV = v => v >= 1000 ? (v/1000).toFixed(1)+'k' : v;
-  const sportColor = s => ({Fútbol:'#E8262A',Rugby:'#16A34A',Tenis:'#F59E0B',Básquet:'#0057A8','Hockey':'#7C3AED','Fórmula 1':'#FF4500'}[s]||'#888');
-
-  // ─────────────────────────────────────────────────────────
+  // ── RENDER ────────────────────────────────────────────────
   return (
     <div>
 
@@ -3075,20 +3227,22 @@ function VarPage({ user, addToast }) {
         <div style={{width:46,height:46,borderRadius:'50%',background:'rgba(255,255,255,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,flexShrink:0}}>📺</div>
         <div style={{flex:1}}>
           <div style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700}}>El VAR</div>
-          <div style={{fontSize:11,opacity:.8}}>La comunidad decide — {jugadas.length} jugadas · {jugadas.reduce((s,j)=>s+j.votosA+j.votosB,0).toLocaleString('es-AR')} votos totales</div>
+          <div style={{fontSize:11,opacity:.8}}>
+            {loadingInit ? '⟳ Cargando desde Supabase…' : `${jugadas.length} jugadas · ${totalVotos.toLocaleString('es-AR')} votos · ${sb?'🟢 Tiempo real':'🟡 Modo local'}`}
+          </div>
         </div>
         <button className="btn btn-sm" style={{background:'rgba(255,255,255,.15)',border:'1.5px solid rgba(255,255,255,.4)',color:'white',flexShrink:0,borderRadius:20}}
           onClick={()=>setShowSubir(true)}>+ Subir jugada</button>
       </div>
 
       {/* FILTROS DEPORTE */}
-      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4,marginBottom:10}}>
+      <div style={{display:'flex',gap:6,overflowX:'auto',paddingBottom:4,marginBottom:10,scrollbarWidth:'none'}}>
         {DEPORTES_FILTER.map(d=>(
           <button key={d} onClick={()=>setFiltro(d)}
             style={{padding:'4px 12px',borderRadius:20,border:'1.5px solid',fontSize:11,fontWeight:700,cursor:'pointer',flexShrink:0,transition:'.15s',
-              background: filtro===d?(d==='Todos'?'var(--red)':sportColor(d)):'var(--white)',
-              borderColor: filtro===d?(d==='Todos'?'var(--red)':sportColor(d)):'var(--br)',
-              color: filtro===d?'white':'var(--tx2)'}}>
+              background:filtro===d?(d==='Todos'?'var(--red)':SPORT_COLOR[d]||'#888'):'var(--white)',
+              borderColor:filtro===d?(d==='Todos'?'var(--red)':SPORT_COLOR[d]||'#888'):'var(--br)',
+              color:filtro===d?'white':'var(--tx2)'}}>
             {d}
           </button>
         ))}
@@ -3106,23 +3260,22 @@ function VarPage({ user, addToast }) {
         ))}
       </div>
 
-      {/* MODAL DETALLE */}
+      {/* DETALLE DE JUGADA */}
       {selJugada && (
-        <div style={{background:'var(--white)',border:'2px solid var(--red)',borderRadius:'var(--rl)',padding:'16px',marginBottom:16,position:'relative'}}>
+        <div style={{background:'var(--white)',border:'2px solid var(--red)',borderRadius:'var(--rl)',padding:16,marginBottom:16,position:'relative'}}>
           <button onClick={()=>setSelId(null)} style={{position:'absolute',top:10,right:12,background:'none',border:'none',fontSize:18,cursor:'pointer',color:'var(--tx3)'}}>✕</button>
 
-          {/* Sport tag + titulo */}
-          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
-            <span style={{background:sportColor(selJugada.sport),color:'white',borderRadius:20,padding:'2px 10px',fontSize:10,fontWeight:700}}>{selJugada.em} {selJugada.sport}</span>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+            <span style={{background:SPORT_COLOR[selJugada.sport]||'#888',color:'white',borderRadius:20,padding:'2px 10px',fontSize:10,fontWeight:700}}>{selJugada.em} {selJugada.sport}</span>
             <span style={{fontSize:10,color:'var(--tx3)'}}>{selJugada.fecha} · {selJugada.competencia}</span>
           </div>
-          <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700,marginBottom:6,lineHeight:1.3}}>{selJugada.titulo}</div>
-          <div style={{fontSize:12,color:'var(--tx2)',marginBottom:12,lineHeight:1.5}}>{selJugada.desc}</div>
+          <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700,marginBottom:6,lineHeight:1.3,paddingRight:24}}>{selJugada.titulo}</div>
+          {selJugada.desc && <div style={{fontSize:12,color:'var(--tx2)',marginBottom:12,lineHeight:1.6}}>{selJugada.desc}</div>}
 
           {/* Video embed */}
-          {selJugada.videoUrl && (
+          {selJugada.videoUrl && selJugada.videoUrl.includes('youtube') && (
             <div style={{background:'#000',borderRadius:'var(--r)',overflow:'hidden',marginBottom:14,aspectRatio:'16/9'}}>
-              <iframe width="100%" height="100%" src={selJugada.videoUrl+'?autoplay=0'} frameBorder="0" allow="encrypted-media" allowFullScreen style={{display:'block'}}/>
+              <iframe width="100%" height="100%" src={selJugada.videoUrl} frameBorder="0" allow="encrypted-media" allowFullScreen style={{display:'block'}}/>
             </div>
           )}
 
@@ -3131,36 +3284,28 @@ function VarPage({ user, addToast }) {
             <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10,textAlign:'center'}}>{selJugada.pregunta}</div>
             {!miVoto[selJugada.id] ? (
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
-                <button onClick={()=>votar(selJugada.id,'A')}
-                  style={{background:'#16A34A',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 8px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
-                  ✅ {selJugada.opA}
-                </button>
-                <button onClick={()=>votar(selJugada.id,'B')}
-                  style={{background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 8px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
-                  ❌ {selJugada.opB}
-                </button>
+                <button onClick={()=>votar(selJugada.id,'A')} style={{background:'#16A34A',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 6px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1.3}}>✅ {selJugada.opA}</button>
+                <button onClick={()=>votar(selJugada.id,'B')} style={{background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:'10px 6px',fontFamily:'var(--fd)',fontSize:12,fontWeight:700,cursor:'pointer',lineHeight:1.3}}>❌ {selJugada.opB}</button>
               </div>
             ) : (
-              <div style={{textAlign:'center',fontSize:12,color:'var(--tx2)',marginBottom:6}}>
-                Tu voto: <strong>{miVoto[selJugada.id]==='A'?selJugada.opA:selJugada.opB}</strong>
-              </div>
+              <div style={{textAlign:'center',fontSize:12,color:'var(--tx2)'}}>Tu voto: <strong>{miVoto[selJugada.id]==='A'?selJugada.opA:selJugada.opB}</strong></div>
             )}
           </div>
 
           {/* Barra de resultado */}
-          {(miVoto[selJugada.id] || (selJugada.votosA+selJugada.votosB)>0) && (() => {
-            const total = selJugada.votosA+selJugada.votosB;
-            const pa = pctA(selJugada);
+          {(() => {
+            const va=getVA(selJugada),vb=getVB(selJugada),total=va+vb,pa=pctA(selJugada);
+            if (total===0) return null;
             return (
               <div style={{marginBottom:12}}>
                 <div style={{display:'flex',borderRadius:8,overflow:'hidden',height:28,marginBottom:4}}>
-                  <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white',transition:'width .5s'}}>{pa}%</div>
-                  <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white'}}>{100-pa}%</div>
+                  <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white',transition:'width .6s ease',minWidth:pa>10?'auto':0}}>{pa>10?pa+'%':''}</div>
+                  <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white'}}>{(100-pa)>10?(100-pa)+'%':''}</div>
                 </div>
                 <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--tx3)'}}>
-                  <span>{selJugada.opA} · {fmtV(selJugada.votosA)} votos</span>
-                  <span>{fmtV(total)} totales</span>
-                  <span>{selJugada.opB} · {fmtV(selJugada.votosB)} votos</span>
+                  <span>{selJugada.opA.slice(0,22)} · {fmtV(va)}</span>
+                  <span style={{fontWeight:700}}>{fmtV(total)} votos en total</span>
+                  <span>{fmtV(vb)} · {selJugada.opB.slice(0,22)}</span>
                 </div>
               </div>
             );
@@ -3168,17 +3313,15 @@ function VarPage({ user, addToast }) {
 
           {/* Veredicto */}
           {(() => {
-            const v = getVeredicto(selJugada);
-            if (!v) {
-              const faltan = VERDICT_MIN_VOTES - (selJugada.votosA+selJugada.votosB);
-              return (
-                <div style={{background:'var(--cel-xl)',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:12,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>
-                  ⏳ Faltan {faltan > 0 ? faltan.toLocaleString('es-AR') : 0} votos para el veredicto de la comunidad
-                </div>
-              );
-            }
+            const v=getVeredicto(selJugada);
+            const total=getVA(selJugada)+getVB(selJugada);
+            if (!v) return (
+              <div style={{background:'var(--cel-xl)',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:12,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>
+                ⏳ Faltan {Math.max(0,VERDICT_MIN_VOTES-total).toLocaleString('es-AR')} votos para el veredicto de la comunidad
+              </div>
+            );
             return (
-              <div style={{background:v.fuerte?'rgba(22,163,74,.1)':'rgba(245,158,11,.1)',border:`1.5px solid ${v.color}`,borderRadius:'var(--r)',padding:'10px 14px',marginBottom:12,textAlign:'center'}}>
+              <div style={{background:v.fuerte?'rgba(22,163,74,.09)':'rgba(245,158,11,.09)',border:`1.5px solid ${v.color}`,borderRadius:'var(--r)',padding:'10px 14px',marginBottom:12,textAlign:'center'}}>
                 <div style={{fontSize:22,marginBottom:2}}>{v.icon}</div>
                 <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,color:v.color}}>Veredicto de la comunidad</div>
                 <div style={{fontSize:13,fontWeight:600,marginTop:3}}>{v.texto}</div>
@@ -3188,8 +3331,12 @@ function VarPage({ user, addToast }) {
 
           {/* Comentarios */}
           <div style={{borderTop:'1px solid var(--br)',paddingTop:12}}>
-            <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>💬 Comentarios ({selJugada.comentarios.length})</div>
-            {selJugada.comentarios.map(c=>(
+            <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:10}}>
+              💬 Comentarios ({selComentarios.length})
+              {sb && <span style={{fontSize:10,color:'var(--tx3)',fontWeight:400,marginLeft:6}}>· tiempo real</span>}
+            </div>
+            {loadingCom && <div style={{textAlign:'center',padding:'12px 0',color:'var(--tx3)',fontSize:12}}>⟳ Cargando comentarios…</div>}
+            {selComentarios.map(c=>(
               <div key={c.id} style={{display:'flex',gap:8,marginBottom:12,alignItems:'flex-start'}}>
                 <div style={{width:28,height:28,borderRadius:'50%',background:c.col||'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:11,fontWeight:700,color:'white',fontFamily:'var(--fd)'}}>{c.av}</div>
                 <div style={{flex:1,background:'var(--bg)',borderRadius:'var(--rs)',padding:'8px 10px'}}>
@@ -3197,21 +3344,20 @@ function VarPage({ user, addToast }) {
                     <span style={{fontFamily:'var(--fd)',fontSize:11,fontWeight:700}}>{c.u}</span>
                     <span style={{fontSize:10,color:'var(--tx3)'}}>{c.ts}</span>
                   </div>
-                  <div style={{fontSize:12,color:'var(--tx)',lineHeight:1.4}}>{c.texto}</div>
-                  <button onClick={()=>likeComentario(selJugada.id, c.id)}
-                    style={{background:'none',border:'none',fontSize:11,color:'var(--tx3)',cursor:'pointer',marginTop:4,padding:0}}>
+                  <div style={{fontSize:12,color:'var(--tx)',lineHeight:1.5}}>{c.texto}</div>
+                  <button onClick={()=>likeComentario(selJugada.id,c.id)}
+                    style={{background:'none',border:'none',fontSize:11,color:'var(--tx3)',cursor:'pointer',marginTop:4,padding:0,display:'flex',alignItems:'center',gap:3}}>
                     🔥 {c.likes||0}
                   </button>
                 </div>
               </div>
             ))}
-            {selJugada.comentarios.length === 0 && (
+            {!loadingCom && selComentarios.length===0 && (
               <div style={{textAlign:'center',fontSize:12,color:'var(--tx3)',padding:'12px 0'}}>Sé el primero en opinar sobre esta jugada</div>
             )}
-            {/* Input comentario */}
             <div style={{display:'flex',gap:8,marginTop:8}}>
               <input
-                placeholder={isGuest ? 'Iniciá sesión para comentar' : 'Tu opinión sobre la jugada...'}
+                placeholder={isGuest?'Iniciá sesión para comentar':'Tu opinión sobre la jugada...'}
                 disabled={isGuest}
                 value={comentando[selJugada.id]||''}
                 onChange={e=>setComentando(prev=>({...prev,[selJugada.id]:e.target.value}))}
@@ -3229,55 +3375,58 @@ function VarPage({ user, addToast }) {
       )}
 
       {/* FEED DE JUGADAS */}
+      {loadingInit && jugadas.length===0 && (
+        <div style={{textAlign:'center',padding:30,color:'var(--tx3)'}}>
+          <div style={{fontSize:28,marginBottom:8,animation:'pulse 1.4s infinite'}}>📺</div>
+          <div style={{fontSize:13}}>Cargando jugadas desde Supabase…</div>
+        </div>
+      )}
       <div style={{display:'grid',gap:10,marginBottom:18}}>
         {jugadasFiltradas.map(j=>{
-          const total = j.votosA+j.votosB;
-          const pa    = pctA(j);
-          const veredicto = getVeredicto(j);
-          const yaVote    = miVoto[j.id];
-          const isOpen    = selId===j.id;
+          const va=getVA(j),vb=getVB(j),total=va+vb,pa=pctA(j);
+          const veredicto=getVeredicto(j);
+          const yaVote=miVoto[j.id];
+          const isOpen=selId===j.id;
           return (
             <div key={j.id} className="card"
               style={{padding:'12px 14px',cursor:'pointer',transition:'.15s',
-                border: isOpen?'2px solid var(--red)':'1px solid var(--br)'}}
+                border:isOpen?'2px solid var(--red)':'1px solid var(--br)'}}
               onClick={()=>setSelId(isOpen?null:j.id)}>
               <div style={{display:'flex',gap:10,alignItems:'flex-start'}}>
-                {/* Sport avatar */}
-                <div style={{width:42,height:42,borderRadius:'var(--rs)',background:sportColor(j.sport)+'22',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{j.em}</div>
+                <div style={{width:42,height:42,borderRadius:'var(--rs)',background:(SPORT_COLOR[j.sport]||'#888')+'22',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>{j.em}</div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{display:'flex',gap:6,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
-                    <span style={{background:sportColor(j.sport),color:'white',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>{j.sport}</span>
+                  <div style={{display:'flex',gap:5,alignItems:'center',marginBottom:4,flexWrap:'wrap'}}>
+                    <span style={{background:SPORT_COLOR[j.sport]||'#888',color:'white',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>{j.sport}</span>
                     {veredicto && <span style={{background:veredicto.fuerte?'rgba(22,163,74,.12)':'rgba(245,158,11,.12)',color:veredicto.color,borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>✓ Veredicto</span>}
-                    {yaVote && <span style={{background:'var(--cel-xl)',color:'var(--cel-d)',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>Ya voté</span>}
+                    {yaVote && <span style={{background:'var(--cel-xl)',color:'var(--cel-d)',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>✅ Voté</span>}
+                    {!j.isStatic && <span style={{background:'rgba(139,92,246,.12)',color:'#7C3AED',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>Nueva</span>}
                   </div>
-                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,lineHeight:1.3,marginBottom:4}}>{j.titulo}</div>
+                  <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:600,lineHeight:1.3,marginBottom:3}}>{j.titulo}</div>
                   <div style={{fontSize:10,color:'var(--tx3)'}}>{j.competencia} · {j.fecha}</div>
                 </div>
               </div>
-              {/* Mini barra de votos */}
-              {total > 0 && (
+              {total>0 ? (
                 <div style={{marginTop:10}}>
                   <div style={{display:'flex',borderRadius:6,overflow:'hidden',height:18}}>
-                    <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',paddingLeft:6,fontSize:9,fontWeight:700,color:'white',minWidth:pa>15?'auto':0,transition:'width .3s'}}>{pa>15?pa+'%':''}</div>
-                    <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'flex-end',paddingRight:6,fontSize:9,fontWeight:700,color:'white'}}>{100-pa>15?(100-pa)+'%':''}</div>
+                    <div style={{width:pa+'%',background:'#16A34A',display:'flex',alignItems:'center',paddingLeft:6,fontSize:9,fontWeight:700,color:'white',transition:'width .4s'}}>{pa>18?pa+'%':''}</div>
+                    <div style={{flex:1,background:'var(--red)',display:'flex',alignItems:'center',justifyContent:'flex-end',paddingRight:6,fontSize:9,fontWeight:700,color:'white'}}>{(100-pa)>18?(100-pa)+'%':''}</div>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--tx3)',marginTop:3}}>
-                    <span>{j.opA.slice(0,22)}{j.opA.length>22?'…':''}</span>
-                    <span style={{fontWeight:700}}>{fmtV(total)} votos · {j.comentarios.length} comentarios</span>
-                    <span>{j.opB.slice(0,22)}{j.opB.length>22?'…':''}</span>
+                    <span style={{maxWidth:'38%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{j.opA}</span>
+                    <span style={{fontWeight:700,flexShrink:0}}>{fmtV(total)} votos</span>
+                    <span style={{maxWidth:'38%',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',textAlign:'right'}}>{j.opB}</span>
                   </div>
                 </div>
-              )}
-              {total === 0 && (
-                <div style={{marginTop:8,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>Sé el primero en votar</div>
+              ) : (
+                <div style={{marginTop:8,fontSize:11,color:'var(--tx3)',textAlign:'center'}}>Sé el primero en votar ↑</div>
               )}
             </div>
           );
         })}
-        {jugadasFiltradas.length===0 && (
+        {jugadasFiltradas.length===0 && !loadingInit && (
           <div style={{textAlign:'center',padding:'30px 0',color:'var(--tx3)'}}>
             <div style={{fontSize:28,marginBottom:8}}>📺</div>
-            <div>No hay jugadas en este deporte aún</div>
+            <div style={{fontSize:13}}>No hay jugadas de {filtro} aún</div>
             <button className="btn btn-sm" style={{marginTop:10}} onClick={()=>setShowSubir(true)}>+ Subir la primera</button>
           </div>
         )}
@@ -3285,86 +3434,87 @@ function VarPage({ user, addToast }) {
 
       {/* RANKING SEMANAL */}
       <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:16}}>
-        <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>🏆 Ranking semanal — más polémicas</div>
-        {ranking.map((j,i)=>(
-          <div key={j.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<2?'1px solid var(--br)':'none',cursor:'pointer'}}
-            onClick={()=>{ setSelId(j.id); window.scrollTo({top:0,behavior:'smooth'}); }}>
-            <div style={{width:26,height:26,borderRadius:'50%',background:i===0?'#F59E0B':i===1?'#9CA3AF':'#CD7F32',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:11,fontWeight:700,color:'white',flexShrink:0}}>{i+1}</div>
-            <div style={{fontSize:18}}>{j.em}</div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.titulo}</div>
-              <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtV(j.votosA+j.votosB)} votos totales</div>
+        <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:12}}>🏆 Ranking — más polémicas de la semana</div>
+        {ranking.map((j,i)=>{
+          const total=getVA(j)+getVB(j);
+          return (
+            <div key={j.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<2?'1px solid var(--br)':'none',cursor:'pointer'}}
+              onClick={()=>{setSelId(j.id);window.scrollTo({top:0,behavior:'smooth'});}}>
+              <div style={{width:26,height:26,borderRadius:'50%',background:i===0?'#F59E0B':i===1?'#9CA3AF':'#CD7F32',display:'flex',alignItems:'center',justifyContent:'center',fontFamily:'var(--fd)',fontSize:11,fontWeight:700,color:'white',flexShrink:0}}>{i+1}</div>
+              <span style={{fontSize:18,flexShrink:0}}>{j.em}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:600,color:'var(--tx)',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{j.titulo}</div>
+                <div style={{fontSize:10,color:'var(--tx3)'}}>{fmtV(total)} votos totales</div>
+              </div>
+              <span style={{background:SPORT_COLOR[j.sport]||'#888',color:'white',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:700,flexShrink:0}}>{j.sport}</span>
             </div>
-            <span style={{background:sportColor(j.sport),color:'white',borderRadius:20,padding:'2px 8px',fontSize:9,fontWeight:700,flexShrink:0}}>{j.sport}</span>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* MODAL SUBIR JUGADA */}
       {showSubir && (
         <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:200,display:'flex',alignItems:'flex-start',justifyContent:'center',overflowY:'auto',padding:'20px 10px'}}
           onClick={e=>{if(e.target===e.currentTarget)setShowSubir(false);}}>
-          <div style={{background:'var(--white)',borderRadius:'var(--rl)',padding:20,width:'100%',maxWidth:520,position:'relative'}}>
+          <div style={{background:'var(--white)',borderRadius:'var(--rl)',padding:20,width:'100%',maxWidth:520,position:'relative',marginBottom:20}}>
             <button onClick={()=>setShowSubir(false)} style={{position:'absolute',top:12,right:14,background:'none',border:'none',fontSize:18,cursor:'pointer',color:'var(--tx3)'}}>✕</button>
             <div style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:700,marginBottom:16}}>📺 Subir jugada al VAR</div>
 
-            {/* Deporte */}
             <div style={{marginBottom:12}}>
-              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Deporte</label>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:5}}>Deporte</label>
               <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
                 {DEPORTES_FILTER.slice(1).map(d=>(
                   <button key={d} onClick={()=>setNueva(n=>({...n,deporte:d}))}
                     style={{padding:'3px 10px',borderRadius:20,border:'1.5px solid',fontSize:11,fontWeight:700,cursor:'pointer',
-                      background:nueva.deporte===d?sportColor(d):'var(--white)',
-                      borderColor:nueva.deporte===d?sportColor(d):'var(--br)',
+                      background:nueva.deporte===d?SPORT_COLOR[d]||'#888':'var(--white)',
+                      borderColor:nueva.deporte===d?SPORT_COLOR[d]||'#888':'var(--br)',
                       color:nueva.deporte===d?'white':'var(--tx2)'}}>
-                    {d}
+                    {SPORT_EM[d]} {d}
                   </button>
                 ))}
               </div>
             </div>
-            {/* Titulo */}
+
+            {[
+              {key:'titulo',     label:'Título de la jugada *',    ph:'¿Fue penal el derribo de Almada?',   max:120},
+              {key:'pregunta',   label:'Pregunta para la comunidad',ph:'¿Fue penal? / ¿Era try válido?',    max:80},
+              {key:'videoUrl',   label:'URL del video (YouTube embed, opcional)',ph:'https://www.youtube.com/embed/...', max:200},
+            ].map(f=>(
+              <div key={f.key} style={{marginBottom:10}}>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>{f.label}</label>
+                <input value={nueva[f.key]} onChange={e=>setNueva(n=>({...n,[f.key]:e.target.value}))} maxLength={f.max}
+                  placeholder={f.ph} style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
+              </div>
+            ))}
+
             <div style={{marginBottom:10}}>
-              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Título de la jugada *</label>
-              <input value={nueva.titulo} onChange={e=>setNueva(n=>({...n,titulo:e.target.value}))} maxLength={120}
-                placeholder="Ej: ¿Fue penal el derribo de Almada en el Superclásico?"
-                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
-            </div>
-            {/* Descripcion */}
-            <div style={{marginBottom:10}}>
-              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Descripción del contexto</label>
+              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Contexto (opcional)</label>
               <textarea value={nueva.desc} onChange={e=>setNueva(n=>({...n,desc:e.target.value}))} maxLength={300} rows={3}
                 placeholder="Minuto, marcador, descripción de la polémica..."
                 style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,resize:'none',boxSizing:'border-box'}}/>
             </div>
-            {/* Video URL */}
-            <div style={{marginBottom:10}}>
-              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>URL del video (YouTube embed, opcional)</label>
-              <input value={nueva.videoUrl} onChange={e=>setNueva(n=>({...n,videoUrl:e.target.value}))}
-                placeholder="https://www.youtube.com/embed/..."
-                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
-            </div>
-            {/* Opciones */}
-            <div style={{marginBottom:10}}>
-              <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>Pregunta para la comunidad</label>
-              <input value={nueva.pregunta} onChange={e=>setNueva(n=>({...n,pregunta:e.target.value}))} maxLength={80}
-                placeholder="¿Fue penal? / ¿Era try válido?"
-                style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'8px 10px',fontSize:13,boxSizing:'border-box'}}/>
-            </div>
+
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:16}}>
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:'#16A34A',display:'block',marginBottom:4}}>Opción A (verde) *</label>
+                <label style={{fontSize:11,fontWeight:700,color:'#16A34A',display:'block',marginBottom:4}}>Opción A — Verde ✅ *</label>
                 <input value={nueva.opA} onChange={e=>setNueva(n=>({...n,opA:e.target.value}))} maxLength={50}
                   placeholder="Sí, fue penal"
                   style={{width:'100%',border:'1.5px solid #16A34A',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,boxSizing:'border-box'}}/>
               </div>
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:'var(--red)',display:'block',marginBottom:4}}>Opción B (roja) *</label>
+                <label style={{fontSize:11,fontWeight:700,color:'var(--red)',display:'block',marginBottom:4}}>Opción B — Roja ❌ *</label>
                 <input value={nueva.opB} onChange={e=>setNueva(n=>({...n,opB:e.target.value}))} maxLength={50}
                   placeholder="No, simuló"
                   style={{width:'100%',border:'1.5px solid var(--red)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,boxSizing:'border-box'}}/>
               </div>
             </div>
+
+            {!sb && (
+              <div style={{background:'rgba(245,158,11,.1)',border:'1px solid #F59E0B',borderRadius:'var(--rs)',padding:'8px 12px',marginBottom:12,fontSize:11,color:'#92400E'}}>
+                ⚠️ Sin Supabase: la jugada se guardará solo en tu sesión local
+              </div>
+            )}
+
             <button onClick={subirJugada} disabled={subiendoV||!nueva.titulo||!nueva.opA||!nueva.opB}
               style={{width:'100%',background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',padding:'11px',fontFamily:'var(--fd)',fontSize:14,fontWeight:700,cursor:'pointer',opacity:(!nueva.titulo||!nueva.opA||!nueva.opB)?0.5:1}}>
               {subiendoV?'Subiendo...':'📺 Publicar al VAR'}
@@ -3376,6 +3526,7 @@ function VarPage({ user, addToast }) {
     </div>
   );
 }
+
 
 function StreamingPage({ addToast }) {
   const [tab, setTab]            = useState('estudio');
