@@ -2701,6 +2701,7 @@ const ADMIN_TABS = [
   {id:'reportes',   l:'🚨 Reportes',     roles:['admin','moderator']},
   {id:'settings',   l:'⚙️ Config',       roles:['admin']},
   {id:'log',        l:'📋 Activity log', roles:['admin']},
+  {id:'editor',     l:'🎨 Editor Visual', roles:['admin']},
 ];
 
 function AdminPage({ user, addToast }) {
@@ -2735,6 +2736,17 @@ function AdminPage({ user, addToast }) {
   const [stats,      setStats]      = useState({users:0,posts:0,comments:0,reports:0,votos:0});
   const [loading,    setLoading]    = useState(false);
   const [savingSet,  setSavingSet]  = useState(false);
+  const [busqUsr,    setBusqUsr]    = useState('');
+  const [confirmRol, setConfirmRol] = useState(null);
+  const [editorTab,  setEditorTab]  = useState('tema');
+  const [savingEd,   setSavingEd]   = useState(false);
+  const [tema, setTema] = useState({color_primario:'#4A90D9',color_secundario:'#C0392B',color_acento:'#F6B40E',fuente_titulos:'Oswald',fuente_cuerpo:'DM Sans'});
+  const [edBanners, setEdBanners] = useState({logo:'',comunidad:'',streaming:'',predice:'',descubre:'',red:'',podcast:'',var_:''});
+  const SECCIONES_DEF = [{id:'home',l:'Inicio'},{id:'news',l:'Noticias'},{id:'comunidad',l:'Comunidad'},{id:'streaming',l:'Streaming'},{id:'prode',l:'La Tribu Predice'},{id:'revista',l:'La Tribu Descubre'},{id:'red',l:'Red de Periodismo'},{id:'podcast',l:'Podcast'},{id:'var',l:'El VAR'},{id:'live',l:'En Vivo'}];
+  const FUENTES = ['Oswald','DM Sans','Merriweather','Roboto','Montserrat','Playfair Display','Raleway','Lato','Poppins'];
+  const [seccionesVis, setSeccionesVis] = useState(()=>{const o={};[{id:'home'},{id:'news'},{id:'comunidad'},{id:'streaming'},{id:'prode'},{id:'revista'},{id:'red'},{id:'podcast'},{id:'var'},{id:'live'}].forEach(s=>{o[s.id]=true;});return o;});
+  const [navItems, setNavItems] = useState([{id:'home',l:'Inicio',icon:'Home'},{id:'news',l:'Noticias',icon:'News'},{id:'comunidad',l:'Comunidad',icon:'Com'},{id:'streaming',l:'Streaming',icon:'Stream'},{id:'prode',l:'La Tribu Predice',icon:'Prode'},{id:'revista',l:'La Tribu Descubre',icon:'Rev'},{id:'red',l:'Red de Periodismo',icon:'Net'},{id:'podcast',l:'Podcast',icon:'Mic'},{id:'var',l:'El VAR',icon:'Check'},{id:'profile',l:'Mi perfil',icon:'Profile'}]);
+  const [nuevoItem, setNuevoItem] = useState({l:'',id:'',icon:'Home'});
 
   // cargar datos según tab
   useEffect(() => { if (myRole) loadTab(tab); }, [tab, myRole]);
@@ -2763,16 +2775,10 @@ function AdminPage({ user, addToast }) {
         try {
           const {data,error} = await sb.rpc('get_users_admin');
           if (!error && data) { setUsuarios(data); }
-          else throw new Error('rpc fallback');
+          else throw new Error('fallback');
         } catch {
-          const {data} = await sb.from('profiles').select(`
-            id, display_name, username, reputation, is_suspended, created_at,
-            user_roles(roles(name))
-          `).order('created_at',{ascending:false}).limit(100);
-          setUsuarios((data||[]).map(u=>({
-            ...u, email:'—',
-            role: u.user_roles?.[0]?.roles?.name || 'user',
-          })));
+          const {data} = await sb.from('profiles').select(`id, display_name, username, reputation, is_suspended, created_at, user_roles(roles(name))`).order('created_at',{ascending:false}).limit(100);
+          setUsuarios((data||[]).map(u=>({...u,email:'—',role:u.user_roles?.[0]?.roles?.name||'user'})));
         }
       }
       if (t === 'contenido') {
@@ -2797,16 +2803,15 @@ function AdminPage({ user, addToast }) {
       }
       if (t === 'editor') {
         const {data} = await sb.from('site_settings').select('key,value');
-        const cfg = {};
-        (data||[]).forEach(r=>{ try{cfg[r.key]=r.value;}catch{} });
-        if (cfg.theme_color_primary)   setTema(p=>({...p,color_primario:   cfg.theme_color_primary}));
-        if (cfg.theme_color_secondary) setTema(p=>({...p,color_secundario: cfg.theme_color_secondary}));
-        if (cfg.theme_color_accent)    setTema(p=>({...p,color_acento:     cfg.theme_color_accent}));
-        if (cfg.theme_font_titles)     setTema(p=>({...p,fuente_titulos:   cfg.theme_font_titles}));
-        if (cfg.theme_font_body)       setTema(p=>({...p,fuente_cuerpo:    cfg.theme_font_body}));
-        if (cfg.banners)           { try{setEdBanners(JSON.parse(cfg.banners));}catch{} }
-        if (cfg.nav_items)         { try{setNavItems(JSON.parse(cfg.nav_items));}catch{} }
-        if (cfg.sections_visible)  { try{setSeccionesVis(JSON.parse(cfg.sections_visible));}catch{} }
+        const cfg={};(data||[]).forEach(r=>{try{cfg[r.key]=r.value;}catch{}});
+        if(cfg.theme_color_primary)   setTema(p=>({...p,color_primario:cfg.theme_color_primary}));
+        if(cfg.theme_color_secondary) setTema(p=>({...p,color_secundario:cfg.theme_color_secondary}));
+        if(cfg.theme_color_accent)    setTema(p=>({...p,color_acento:cfg.theme_color_accent}));
+        if(cfg.theme_font_titles)     setTema(p=>({...p,fuente_titulos:cfg.theme_font_titles}));
+        if(cfg.theme_font_body)       setTema(p=>({...p,fuente_cuerpo:cfg.theme_font_body}));
+        if(cfg.banners)          {try{setEdBanners(JSON.parse(cfg.banners));}catch{}}
+        if(cfg.nav_items)        {try{setNavItems(JSON.parse(cfg.nav_items));}catch{}}
+        if(cfg.sections_visible) {try{setSeccionesVis(JSON.parse(cfg.sections_visible));}catch{}}
       }
     } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
     setLoading(false);
@@ -2818,10 +2823,10 @@ function AdminPage({ user, addToast }) {
     await sb.from('user_roles').delete().eq('user_id', userId);
     const {data:rol} = await sb.from('roles').select('id').eq('name',nuevoRol).single();
     if (rol) await sb.from('user_roles').insert({user_id:userId, role_id:rol.id, assigned_by:sbUser.id});
-    try { await sb.rpc('log_action',{p_action:'user.role_change',p_target_type:'user',p_target_id:userId,p_detail:{nuevo_rol:nuevoRol}}); } catch {}
+    try{await sb.rpc('log_action',{p_action:'user.role_change',p_target_type:'user',p_target_id:userId,p_detail:{nuevo_rol:nuevoRol}});}catch{}
     setUsuarios(prev=>prev.map(u=>u.id===userId?{...u,role:nuevoRol}:u));
     setConfirmRol(null);
-    addToast({msg:`✅ Rol cambiado a ${nuevoRol}`,type:'ok'});
+    addToast({msg:'✅ Rol cambiado a '+nuevoRol,type:'ok'});
   }
 
   async function suspenderUsuario(userId, suspended) {
@@ -2861,31 +2866,30 @@ function AdminPage({ user, addToast }) {
     setSavingSet(false);
   }
 
-  // ── guardar Editor Visual ─────────────────────────────────
   async function guardarEditor() {
-    if (!sb) return;
+    if(!sb)return;
     setSavingEd(true);
-    try {
-      const now = new Date().toISOString();
-      const rows = [
-        {key:'theme_color_primary',   value:tema.color_primario},
-        {key:'theme_color_secondary', value:tema.color_secundario},
-        {key:'theme_color_accent',    value:tema.color_acento},
-        {key:'theme_font_titles',     value:tema.fuente_titulos},
-        {key:'theme_font_body',       value:tema.fuente_cuerpo},
-        {key:'banners',               value:JSON.stringify(edBanners)},
-        {key:'nav_items',             value:JSON.stringify(navItems)},
-        {key:'sections_visible',      value:JSON.stringify(seccionesVis)},
+    try{
+      const now=new Date().toISOString();
+      const rows=[
+        {key:'theme_color_primary',value:tema.color_primario},
+        {key:'theme_color_secondary',value:tema.color_secundario},
+        {key:'theme_color_accent',value:tema.color_acento},
+        {key:'theme_font_titles',value:tema.fuente_titulos},
+        {key:'theme_font_body',value:tema.fuente_cuerpo},
+        {key:'banners',value:JSON.stringify(edBanners)},
+        {key:'nav_items',value:JSON.stringify(navItems)},
+        {key:'sections_visible',value:JSON.stringify(seccionesVis)},
       ].map(r=>({...r,updated_by:sbUser.id,updated_at:now}));
       await sb.from('site_settings').upsert(rows,{onConflict:'key'});
-      const root = document.documentElement;
-      root.style.setProperty('--cel', tema.color_primario);
-      root.style.setProperty('--red', tema.color_secundario);
-      root.style.setProperty('--sun', tema.color_acento);
-      root.style.setProperty('--fd', `'${tema.fuente_titulos}',sans-serif`);
-      root.style.setProperty('--fw', `'${tema.fuente_cuerpo}',sans-serif`);
-      addToast({msg:'✅ Cambios aplicados. Recargá la página para verlos completos.',type:'ok'});
-    } catch(e) { addToast({msg:'Error: '+e.message,type:'err'}); }
+      const root=document.documentElement;
+      root.style.setProperty('--cel',tema.color_primario);
+      root.style.setProperty('--red',tema.color_secundario);
+      root.style.setProperty('--sun',tema.color_acento);
+      root.style.setProperty('--fd',"'"+tema.fuente_titulos+"',sans-serif");
+      root.style.setProperty('--fw',"'"+tema.fuente_cuerpo+"',sans-serif");
+      addToast({msg:'✅ Cambios guardados y aplicados',type:'ok'});
+    }catch(e){addToast({msg:'Error: '+e.message,type:'err'});}
     setSavingEd(false);
   }
 
@@ -3003,65 +3007,59 @@ function AdminPage({ user, addToast }) {
       {tab==='usuarios' && !loading && (
         <div>
           {confirmRol && (
-            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
-              <div style={{background:'var(--white)',borderRadius:'var(--rl)',padding:'24px 22px',maxWidth:340,width:'100%',boxShadow:'0 8px 32px rgba(0,0,0,.18)'}}>
-                <div style={{fontSize:28,textAlign:'center',marginBottom:8}}>{confirmRol.rol==='admin'?'👑':confirmRol.rol==='moderator'?'🔧':'👤'}</div>
-                <div style={{fontFamily:'var(--fd)',fontSize:15,fontWeight:700,textAlign:'center',marginBottom:6}}>Cambiar rol</div>
-                <div style={{fontSize:13,color:'var(--tx2)',textAlign:'center',marginBottom:18,lineHeight:1.5}}>
+            <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+              <div style={{background:'var(--white)',borderRadius:'var(--rl)',padding:'24px 20px',maxWidth:320,width:'100%',boxShadow:'0 8px 32px rgba(0,0,0,.2)'}}>
+                <div style={{fontSize:26,textAlign:'center',marginBottom:8}}>{confirmRol.rol==='admin'?'👑':confirmRol.rol==='moderator'?'🔧':'👤'}</div>
+                <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,textAlign:'center',marginBottom:8}}>Cambiar rol</div>
+                <div style={{fontSize:13,color:'var(--tx2)',textAlign:'center',marginBottom:16,lineHeight:1.5}}>
                   Asignar <strong>{confirmRol.rol}</strong> a <strong>{confirmRol.nombre}</strong>
-                  {confirmRol.rol==='admin' && <div style={{marginTop:8,fontSize:11,color:'var(--red)',background:'rgba(192,57,43,.08)',borderRadius:6,padding:'6px 10px'}}>⚠️ El admin tiene acceso total. Hacelo solo con gente de confianza.</div>}
+                  {confirmRol.rol==='admin' && <div style={{marginTop:8,fontSize:11,color:'var(--red)',background:'rgba(192,57,43,.08)',borderRadius:6,padding:'5px 8px'}}>⚠️ Acceso total al panel. Solo con personas de confianza.</div>}
                 </div>
                 <div style={{display:'flex',gap:8}}>
-                  <button onClick={()=>setConfirmRol(null)} style={{flex:1,padding:'9px 0',borderRadius:'var(--r)',border:'1px solid var(--br)',background:'var(--bg)',color:'var(--tx)',cursor:'pointer',fontSize:13}}>Cancelar</button>
-                  <button onClick={()=>cambiarRol(confirmRol.userId,confirmRol.rol)} style={{flex:1,padding:'9px 0',borderRadius:'var(--r)',border:'none',background:roleColor(confirmRol.rol),color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Confirmar</button>
+                  <button onClick={()=>setConfirmRol(null)} style={{flex:1,padding:'8px 0',borderRadius:'var(--r)',border:'1px solid var(--br)',background:'var(--bg)',cursor:'pointer',fontSize:13}}>Cancelar</button>
+                  <button onClick={()=>cambiarRol(confirmRol.userId,confirmRol.rol)} style={{flex:1,padding:'8px 0',borderRadius:'var(--r)',border:'none',background:roleColor(confirmRol.rol),color:'white',cursor:'pointer',fontSize:13,fontWeight:700}}>Confirmar</button>
                 </div>
               </div>
             </div>
           )}
-          <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:12,flexWrap:'wrap'}}>
+          <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
             <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,flex:1}}>👥 Usuarios ({usuarios.length})</div>
-            <input type="text" placeholder="Buscar nombre o email…" value={busqUsr} onChange={e=>setBusqUsr(e.target.value)}
-              style={{border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'6px 12px',fontSize:12,background:'var(--bg)',color:'var(--tx)',width:200}}/>
+            <input type="text" placeholder="Buscar…" value={busqUsr} onChange={e=>setBusqUsr(e.target.value)}
+              style={{border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'5px 10px',fontSize:12,background:'var(--bg)',color:'var(--tx)',width:160}}/>
             <button className="btn btn-sm" onClick={()=>loadTab('usuarios')}>⟳</button>
           </div>
-          <div style={{display:'flex',gap:8,marginBottom:14,flexWrap:'wrap'}}>
+          <div style={{display:'flex',gap:6,marginBottom:12,flexWrap:'wrap'}}>
             {['admin','moderator','user'].map(r=>(
-              <div key={r} style={{background:'var(--bg)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'5px 12px',display:'flex',alignItems:'center',gap:6}}>
+              <div key={r} style={{background:'var(--bg)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'4px 10px',display:'flex',alignItems:'center',gap:5}}>
                 <div style={{width:7,height:7,borderRadius:'50%',background:roleColor(r)}}/>
                 <span style={{fontSize:11,fontWeight:700,color:roleColor(r)}}>{r}</span>
                 <span style={{fontSize:11,color:'var(--tx3)'}}>{usuarios.filter(u=>u.role===r).length}</span>
               </div>
             ))}
-            <div style={{background:'rgba(192,57,43,.08)',border:'1px solid rgba(192,57,43,.2)',borderRadius:'var(--r)',padding:'5px 12px',display:'flex',alignItems:'center',gap:6}}>
-              <span style={{fontSize:11,fontWeight:700,color:'var(--red)'}}>suspendidos</span>
-              <span style={{fontSize:11,color:'var(--tx3)'}}>{usuarios.filter(u=>u.is_suspended).length}</span>
-            </div>
           </div>
-          {usuarios.length===0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin usuarios cargados</div>}
-          {usuarios.filter(u=>{const q=busqUsr.toLowerCase();return !q||(u.display_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q)||(u.username||'').toLowerCase().includes(q);}).map(u=>(
-            <div key={u.id} style={{background:'var(--white)',border:`1px solid ${u.is_suspended?'rgba(192,57,43,.25)':'var(--br)'}`,borderRadius:'var(--r)',padding:'11px 14px',marginBottom:8,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap',opacity:u.is_suspended?.7:1}}>
-              <div style={{width:36,height:36,borderRadius:'50%',background:u.role==='admin'?'var(--red)':u.role==='moderator'?'#F59E0B':'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'white',fontFamily:'var(--fd)'}}>
+          {usuarios.length===0 && <div style={{textAlign:'center',padding:30,color:'var(--tx3)',fontSize:13}}>Sin usuarios</div>}
+          {usuarios.filter(u=>{const q=busqUsr.toLowerCase();return !q||(u.display_name||'').toLowerCase().includes(q)||(u.email||'').toLowerCase().includes(q);}).map(u=>(
+            <div key={u.id} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 12px',marginBottom:7,display:'flex',gap:10,alignItems:'center',flexWrap:'wrap'}}>
+              <div style={{width:34,height:34,borderRadius:'50%',background:u.role==='admin'?'var(--red)':u.role==='moderator'?'#F59E0B':'var(--cel)',flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700,color:'white'}}>
                 {(u.display_name||u.username||u.email||'?')[0].toUpperCase()}
               </div>
               <div style={{flex:1,minWidth:100}}>
                 <div style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,display:'flex',alignItems:'center',gap:6,flexWrap:'wrap',marginBottom:2}}>
                   {u.display_name||u.username||'Sin nombre'}
-                  <span style={{background:roleColor(u.role),color:'white',borderRadius:20,padding:'1px 8px',fontSize:9,fontWeight:700}}>
-                    {u.role==='admin'?'👑 admin':u.role==='moderator'?'🔧 mod':'usuario'}
-                  </span>
-                  {u.is_suspended && <span style={{background:'var(--red)',color:'white',borderRadius:20,padding:'1px 7px',fontSize:9,fontWeight:700}}>SUSPENDIDO</span>}
+                  <span style={{background:roleColor(u.role),color:'white',borderRadius:20,padding:'1px 7px',fontSize:9,fontWeight:700}}>{u.role==='admin'?'👑 admin':u.role==='moderator'?'🔧 mod':'usuario'}</span>
+                  {u.is_suspended && <span style={{background:'var(--red)',color:'white',borderRadius:20,padding:'1px 7px',fontSize:9}}>SUSPENDIDO</span>}
                 </div>
                 <div style={{fontSize:10,color:'var(--tx3)'}}>{u.email||'—'} · Rep {u.reputation||0}</div>
               </div>
-              <div style={{display:'flex',gap:6,flexShrink:0,flexWrap:'wrap',alignItems:'center'}}>
-                <select value={u.role} onChange={e=>{ const nr=e.target.value; if(nr!==u.role) setConfirmRol({userId:u.id,nombre:u.display_name||u.email||u.id,rol:nr}); }}
-                  style={{fontSize:11,padding:'4px 8px',borderRadius:'var(--rs)',border:'1px solid var(--br)',background:'var(--white)',cursor:'pointer',color:'var(--tx)'}}>
+              <div style={{display:'flex',gap:6,flexShrink:0,alignItems:'center'}}>
+                <select value={u.role} onChange={e=>{const nr=e.target.value;if(nr!==u.role)setConfirmRol({userId:u.id,nombre:u.display_name||u.email||u.id,rol:nr});}}
+                  style={{fontSize:11,padding:'4px 7px',borderRadius:'var(--rs)',border:'1px solid var(--br)',background:'var(--white)',cursor:'pointer',color:'var(--tx)'}}>
                   <option value="user">👤 user</option>
-                  <option value="moderator">🔧 moderador</option>
+                  <option value="moderator">🔧 mod</option>
                   {myRole==='admin' && <option value="admin">👑 admin</option>}
                 </select>
                 <button onClick={()=>suspenderUsuario(u.id,!u.is_suspended)}
-                  style={{fontSize:10,padding:'4px 10px',borderRadius:'var(--rs)',cursor:'pointer',border:'1px solid',
+                  style={{fontSize:10,padding:'4px 9px',borderRadius:'var(--rs)',cursor:'pointer',border:'1px solid',
                     background:u.is_suspended?'rgba(22,163,74,.1)':'rgba(192,57,43,.08)',
                     borderColor:u.is_suspended?'rgba(22,163,74,.3)':'rgba(192,57,43,.3)',
                     color:u.is_suspended?'#16A34A':'var(--red)'}}>
@@ -3180,10 +3178,10 @@ function AdminPage({ user, addToast }) {
       {/* ── TAB: EDITOR VISUAL ── */}
       {tab==='editor' && !loading && (
         <div>
-          <div style={{display:'flex',gap:0,background:'var(--bg)',borderRadius:'var(--r)',marginBottom:14,overflow:'hidden',border:'1px solid var(--br)'}}>
+          <div style={{display:'flex',background:'var(--bg)',borderRadius:'var(--r)',marginBottom:14,overflow:'hidden',border:'1px solid var(--br)'}}>
             {[{id:'tema',l:'🎨 Tema'},{id:'imagenes',l:'🖼️ Imágenes'},{id:'secciones',l:'👁️ Secciones'},{id:'menu',l:'🧭 Menú'}].map(t=>(
               <div key={t.id} onClick={()=>setEditorTab(t.id)}
-                style={{flex:1,padding:'9px 4px',textAlign:'center',cursor:'pointer',fontSize:11,fontWeight:700,
+                style={{flex:1,padding:'9px 2px',textAlign:'center',cursor:'pointer',fontSize:11,fontWeight:700,
                   background:editorTab===t.id?'var(--cel)':'transparent',
                   color:editorTab===t.id?'white':'var(--tx3)'}}>
                 {t.l}
@@ -3193,42 +3191,32 @@ function AdminPage({ user, addToast }) {
 
           {editorTab==='tema' && (
             <div>
-              <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:10}}>
+              <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px',marginBottom:10}}>
                 <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:12}}>Colores</div>
-                {[
-                  {key:'color_primario',   l:'Color primario',   hint:'Header, links, botones'},
-                  {key:'color_secundario', l:'Color de alerta',  hint:'Badges EN VIVO, destacados'},
-                  {key:'color_acento',     l:'Color de premio',  hint:'Prode, trofeos, badges'},
-                ].map(f=>(
-                  <div key={f.key} style={{display:'flex',alignItems:'center',gap:12,marginBottom:12}}>
+                {[{key:'color_primario',l:'Color primario',hint:'Header, links, botones'},{key:'color_secundario',l:'Color alerta',hint:'Badges EN VIVO'},{key:'color_acento',l:'Color premio',hint:'Prode, trofeos'}].map(f=>(
+                  <div key={f.key} style={{display:'flex',alignItems:'center',gap:10,marginBottom:11}}>
                     <input type="color" value={tema[f.key]} onChange={e=>setTema(p=>({...p,[f.key]:e.target.value}))}
-                      style={{width:44,height:36,border:'1px solid var(--br)',borderRadius:6,cursor:'pointer',padding:2,flexShrink:0}}/>
-                    <div style={{flex:1}}>
-                      <div style={{fontSize:12,fontWeight:600,marginBottom:1}}>{f.l}</div>
-                      <div style={{fontSize:10,color:'var(--tx3)'}}>{f.hint}</div>
-                    </div>
-                    <code style={{fontSize:10,background:'var(--bg)',padding:'3px 8px',borderRadius:4,color:'var(--tx2)'}}>{tema[f.key]}</code>
+                      style={{width:42,height:34,border:'1px solid var(--br)',borderRadius:6,cursor:'pointer',padding:2,flexShrink:0}}/>
+                    <div style={{flex:1}}><div style={{fontSize:12,fontWeight:600}}>{f.l}</div><div style={{fontSize:10,color:'var(--tx3)'}}>{f.hint}</div></div>
+                    <code style={{fontSize:10,background:'var(--bg)',padding:'2px 7px',borderRadius:4,color:'var(--tx2)'}}>{tema[f.key]}</code>
                   </div>
                 ))}
-                <div style={{display:'flex',gap:8,marginTop:4,flexWrap:'wrap'}}>
-                  <div style={{background:tema.color_primario,color:'white',borderRadius:20,padding:'5px 14px',fontSize:12,fontWeight:600}}>Botón primario</div>
-                  <div style={{background:tema.color_secundario,color:'white',borderRadius:20,padding:'5px 14px',fontSize:12,fontWeight:600}}>EN VIVO</div>
-                  <div style={{background:tema.color_acento,color:'white',borderRadius:20,padding:'5px 14px',fontSize:12,fontWeight:600}}>🏆 Premio</div>
-                  <div style={{border:`2px solid ${tema.color_primario}`,color:tema.color_primario,borderRadius:20,padding:'5px 14px',fontSize:12,fontWeight:600}}>Outline</div>
+                <div style={{display:'flex',gap:8,marginTop:8,flexWrap:'wrap'}}>
+                  <div style={{background:tema.color_primario,color:'white',borderRadius:20,padding:'4px 12px',fontSize:11,fontWeight:600}}>Primario</div>
+                  <div style={{background:tema.color_secundario,color:'white',borderRadius:20,padding:'4px 12px',fontSize:11,fontWeight:600}}>EN VIVO</div>
+                  <div style={{background:tema.color_acento,color:'white',borderRadius:20,padding:'4px 12px',fontSize:11,fontWeight:600}}>🏆</div>
                 </div>
               </div>
-              <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px 16px',marginBottom:10}}>
+              <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px',marginBottom:10}}>
                 <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:12}}>Fuentes</div>
-                {[{key:'fuente_titulos',l:'Títulos (H1, H2, badges)'},{key:'fuente_cuerpo',l:'Texto (párrafos, botones)'}].map(f=>(
+                {[{key:'fuente_titulos',l:'Títulos'},{key:'fuente_cuerpo',l:'Texto'}].map(f=>(
                   <div key={f.key} style={{marginBottom:12}}>
-                    <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:5}}>{f.l}</label>
+                    <label style={{fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:4}}>{f.l}</label>
                     <select value={tema[f.key]} onChange={e=>setTema(p=>({...p,[f.key]:e.target.value}))}
-                      style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}>
+                      style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 10px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}>
                       {FUENTES.map(fn=><option key={fn} value={fn}>{fn}</option>)}
                     </select>
-                    <div style={{marginTop:6,fontSize:15,fontFamily:`'${tema[f.key]}',sans-serif`,color:'var(--tx2)'}}>
-                      Tribuna Libre — Periodismo Deportivo
-                    </div>
+                    <div style={{marginTop:5,fontSize:14,fontFamily:"'"+tema[f.key]+"',sans-serif",color:'var(--tx2)'}}>Tribuna Libre</div>
                   </div>
                 ))}
               </div>
@@ -3237,28 +3225,17 @@ function AdminPage({ user, addToast }) {
 
           {editorTab==='imagenes' && (
             <div>
-              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:12}}>Pegá URLs de raw.githubusercontent.com. Se ven en preview instantáneamente.</div>
-              {[
-                {key:'logo',      l:'Logo del sitio',           hint:'Header y hero'},
-                {key:'comunidad', l:'Banner Comunidad',         hint:'Cabecera de sección'},
-                {key:'streaming', l:'Banner Streaming',         hint:''},
-                {key:'predice',   l:'Banner La Tribu Predice',  hint:''},
-                {key:'descubre',  l:'Banner La Tribu Descubre', hint:''},
-                {key:'red',       l:'Banner Red de Periodismo', hint:''},
-                {key:'podcast',   l:'Banner Podcast',           hint:''},
-                {key:'var_',      l:'Banner El VAR',            hint:''},
-              ].map(f=>(
-                <div key={f.key} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 12px',marginBottom:8,display:'flex',gap:10,alignItems:'center'}}>
-                  <div style={{width:54,height:38,borderRadius:6,background:'var(--bg)',flexShrink:0,overflow:'hidden',border:'1px solid var(--br)',display:'flex',alignItems:'center',justifyContent:'center'}}>
-                    {edBanners[f.key]
-                      ? <img src={edBanners[f.key]} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none'}}/>
-                      : <span style={{fontSize:18}}>🖼️</span>}
+              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:10}}>Pegá URLs de raw.githubusercontent.com</div>
+              {[{key:'logo',l:'Logo'},{key:'comunidad',l:'Banner Comunidad'},{key:'streaming',l:'Banner Streaming'},{key:'predice',l:'Banner La Tribu Predice'},{key:'descubre',l:'Banner La Tribu Descubre'},{key:'red',l:'Banner Red de Periodismo'},{key:'podcast',l:'Banner Podcast'},{key:'var_',l:'Banner El VAR'}].map(f=>(
+                <div key={f.key} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 12px',marginBottom:7,display:'flex',gap:10,alignItems:'center'}}>
+                  <div style={{width:52,height:36,borderRadius:6,background:'var(--bg)',flexShrink:0,overflow:'hidden',border:'1px solid var(--br)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    {edBanners[f.key]?<img src={edBanners[f.key]} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none'}}/>:<span style={{fontSize:16}}>🖼️</span>}
                   </div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>{f.l} {f.hint&&<span style={{fontSize:10,fontWeight:400,color:'var(--tx3)'}}>— {f.hint}</span>}</div>
+                    <div style={{fontSize:12,fontWeight:700,marginBottom:4}}>{f.l}</div>
                     <input type="text" value={edBanners[f.key]||''} placeholder="https://raw.githubusercontent.com/…"
                       onChange={e=>setEdBanners(p=>({...p,[f.key]:e.target.value}))}
-                      style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'5px 9px',fontSize:11,boxSizing:'border-box',background:'var(--bg)',color:'var(--tx)'}}/>
+                      style={{width:'100%',border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'5px 8px',fontSize:11,boxSizing:'border-box',background:'var(--bg)',color:'var(--tx)'}}/>
                   </div>
                 </div>
               ))}
@@ -3267,20 +3244,15 @@ function AdminPage({ user, addToast }) {
 
           {editorTab==='secciones' && (
             <div>
-              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:12}}>Activá o desactivá secciones del menú.</div>
+              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:10}}>Activá o desactivá secciones del menú.</div>
               {SECCIONES_DEF.map(s=>(
-                <div key={s.id} style={{background:'var(--white)',border:`1px solid ${seccionesVis[s.id]===false?'rgba(192,57,43,.2)':'var(--br)'}`,borderRadius:'var(--r)',padding:'11px 14px',marginBottom:7,display:'flex',alignItems:'center',gap:12}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:600}}>{s.l}</div>
-                    <div style={{fontSize:10,color:'var(--tx3)'}}>/{s.id}</div>
-                  </div>
-                  <span style={{fontSize:11,color:seccionesVis[s.id]===false?'var(--red)':'#16A34A',fontWeight:600,marginRight:6}}>
-                    {seccionesVis[s.id]===false?'Oculta':'Visible'}
-                  </span>
+                <div key={s.id} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'10px 14px',marginBottom:7,display:'flex',alignItems:'center',gap:10}}>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{s.l}</div><div style={{fontSize:10,color:'var(--tx3)'}}>/{s.id}</div></div>
+                  <span style={{fontSize:11,fontWeight:600,color:seccionesVis[s.id]===false?'var(--red)':'#16A34A',marginRight:8}}>{seccionesVis[s.id]===false?'Oculta':'Visible'}</span>
                   <div onClick={()=>setSeccionesVis(p=>({...p,[s.id]:p[s.id]===false?true:false}))}
-                    style={{width:40,height:22,borderRadius:11,cursor:'pointer',transition:'.2s',position:'relative',
-                      background:seccionesVis[s.id]===false?'rgba(0,0,0,.12)':'var(--cel)',flexShrink:0}}>
-                    <div style={{position:'absolute',top:3,transition:'.2s',width:16,height:16,borderRadius:'50%',background:'white',boxShadow:'0 1px 4px rgba(0,0,0,.2)',
+                    style={{width:40,height:22,borderRadius:11,cursor:'pointer',transition:'.2s',position:'relative',flexShrink:0,
+                      background:seccionesVis[s.id]===false?'rgba(0,0,0,.15)':'var(--cel)'}}>
+                    <div style={{position:'absolute',top:3,transition:'.2s',width:16,height:16,borderRadius:'50%',background:'white',
                       left:seccionesVis[s.id]===false?3:21}}/>
                   </div>
                 </div>
@@ -3290,41 +3262,39 @@ function AdminPage({ user, addToast }) {
 
           {editorTab==='menu' && (
             <div>
-              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:12}}>Renombrá, reordená o agregá ítems al menú lateral.</div>
+              <div style={{fontSize:11,color:'var(--tx3)',marginBottom:10}}>Renombrá, reordená o agregá ítems al menú lateral.</div>
               {navItems.map((item,idx)=>(
-                <div key={item.id+idx} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'9px 12px',marginBottom:6,display:'flex',gap:8,alignItems:'center'}}>
-                  <div style={{display:'flex',flexDirection:'column',gap:2,flexShrink:0}}>
+                <div key={item.id+idx} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'8px 10px',marginBottom:6,display:'flex',gap:7,alignItems:'center'}}>
+                  <div style={{display:'flex',flexDirection:'column',gap:2}}>
                     <button onClick={()=>{if(idx===0)return;const a=[...navItems];[a[idx-1],a[idx]]=[a[idx],a[idx-1]];setNavItems(a);}}
-                      style={{fontSize:9,padding:'2px 5px',borderRadius:3,border:'1px solid var(--br)',background:'var(--bg)',cursor:'pointer',color:'var(--tx2)',lineHeight:1}}>▲</button>
+                      style={{fontSize:9,padding:'1px 5px',borderRadius:3,border:'1px solid var(--br)',background:'var(--bg)',cursor:'pointer',color:'var(--tx2)'}}>▲</button>
                     <button onClick={()=>{if(idx===navItems.length-1)return;const a=[...navItems];[a[idx],a[idx+1]]=[a[idx+1],a[idx]];setNavItems(a);}}
-                      style={{fontSize:9,padding:'2px 5px',borderRadius:3,border:'1px solid var(--br)',background:'var(--bg)',cursor:'pointer',color:'var(--tx2)',lineHeight:1}}>▼</button>
+                      style={{fontSize:9,padding:'1px 5px',borderRadius:3,border:'1px solid var(--br)',background:'var(--bg)',cursor:'pointer',color:'var(--tx2)'}}>▼</button>
                   </div>
                   <input value={item.l} onChange={e=>setNavItems(p=>p.map((n,i)=>i===idx?{...n,l:e.target.value}:n))}
-                    style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'5px 9px',fontSize:12,background:'var(--bg)',color:'var(--tx)'}}/>
-                  <code style={{fontSize:9,color:'var(--tx3)',background:'var(--bg)',padding:'2px 6px',borderRadius:4,flexShrink:0}}>{item.id}</code>
+                    style={{flex:1,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'5px 8px',fontSize:12,background:'var(--bg)',color:'var(--tx)'}}/>
+                  <code style={{fontSize:9,color:'var(--tx3)',background:'var(--bg)',padding:'2px 5px',borderRadius:3}}>{item.id}</code>
                   <button onClick={()=>setNavItems(p=>p.filter((_,i)=>i!==idx))}
-                    style={{fontSize:11,padding:'3px 8px',borderRadius:'var(--rs)',border:'1px solid rgba(192,57,43,.3)',background:'rgba(192,57,43,.08)',color:'var(--red)',cursor:'pointer',flexShrink:0}}>✕</button>
+                    style={{fontSize:11,padding:'3px 7px',borderRadius:'var(--rs)',border:'1px solid rgba(192,57,43,.3)',background:'rgba(192,57,43,.08)',color:'var(--red)',cursor:'pointer'}}>✕</button>
                 </div>
               ))}
               <div style={{background:'var(--bg)',border:'1.5px dashed var(--br)',borderRadius:'var(--r)',padding:'12px',marginTop:8}}>
                 <div style={{fontSize:12,fontWeight:700,marginBottom:8,color:'var(--tx2)'}}>+ Nuevo ítem</div>
                 <div style={{display:'flex',gap:7,flexWrap:'wrap'}}>
-                  <input placeholder="Nombre (ej: Torneos)" value={nuevoItem.l} onChange={e=>setNuevoItem(p=>({...p,l:e.target.value}))}
-                    style={{flex:2,minWidth:110,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 9px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}/>
-                  <input placeholder="ID (ej: torneos)" value={nuevoItem.id} onChange={e=>setNuevoItem(p=>({...p,id:e.target.value.toLowerCase().replace(/[^a-z0-9]/g,'')}))}
-                    style={{flex:1,minWidth:90,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 9px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}/>
+                  <input placeholder="Nombre" value={nuevoItem.l} onChange={e=>setNuevoItem(p=>({...p,l:e.target.value}))}
+                    style={{flex:2,minWidth:100,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 8px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}/>
+                  <input placeholder="ID (sin espacios)" value={nuevoItem.id} onChange={e=>setNuevoItem(p=>({...p,id:e.target.value.toLowerCase().replace(/[^a-z0-9]/g,'')}))}
+                    style={{flex:1,minWidth:80,border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'6px 8px',fontSize:12,background:'var(--white)',color:'var(--tx)'}}/>
                   <button onClick={()=>{if(!nuevoItem.l||!nuevoItem.id)return;setNavItems(p=>[...p,{...nuevoItem}]);setNuevoItem({l:'',id:'',icon:'Home'});}}
-                    style={{padding:'6px 14px',background:'var(--cel)',color:'white',border:'none',borderRadius:'var(--rs)',fontSize:12,fontWeight:700,cursor:'pointer'}}>
-                    Agregar
-                  </button>
+                    style={{padding:'6px 12px',background:'var(--cel)',color:'white',border:'none',borderRadius:'var(--rs)',fontSize:12,fontWeight:700,cursor:'pointer'}}>Agregar</button>
                 </div>
               </div>
             </div>
           )}
 
           <button onClick={guardarEditor} disabled={savingEd}
-            style={{width:'100%',background:'linear-gradient(135deg,var(--cel-d),var(--cel))',color:'white',border:'none',borderRadius:'var(--r)',padding:'13px 0',fontFamily:'var(--fd)',fontSize:14,fontWeight:700,cursor:'pointer',marginTop:14,letterSpacing:.3}}>
-            {savingEd?'Aplicando…':'💾 Guardar y aplicar cambios'}
+            style={{width:'100%',background:'linear-gradient(135deg,var(--cel-d),var(--cel))',color:'white',border:'none',borderRadius:'var(--r)',padding:'12px 0',fontFamily:'var(--fd)',fontSize:14,fontWeight:700,cursor:'pointer',marginTop:12}}>
+            {savingEd?'Guardando…':'💾 Guardar y aplicar cambios'}
           </button>
         </div>
       )}
@@ -7853,28 +7823,26 @@ function EnVivoPage({ addToast }) {
 }
 function App() {
   const [page, setPage]     = useState('home');
-  const [navConfig, setNavConfig] = useState(null);
-
-  useEffect(()=>{
-    const sb = window.__supabase;
-    if (!sb) return;
-    sb.from('site_settings').select('key,value').then(({data})=>{
-      if (!data) return;
-      const cfg = {};
-      data.forEach(r=>{ try{cfg[r.key]=r.value;}catch{} });
-      const root = document.documentElement;
-      if (cfg.theme_color_primary)   root.style.setProperty('--cel', cfg.theme_color_primary);
-      if (cfg.theme_color_secondary) root.style.setProperty('--red', cfg.theme_color_secondary);
-      if (cfg.theme_color_accent)    root.style.setProperty('--sun', cfg.theme_color_accent);
-      if (cfg.theme_font_titles)     root.style.setProperty('--fd', `'${cfg.theme_font_titles}',sans-serif`);
-      if (cfg.theme_font_body)       root.style.setProperty('--fw', `'${cfg.theme_font_body}',sans-serif`);
-      if (cfg.nav_items) { try{setNavConfig(JSON.parse(cfg.nav_items));}catch{} }
-    }).catch(()=>{});
-  },[]);
-
   const [article, setArticle] = useState(null);
   const [user, setUser]     = useState({ isGuest: true });
   const [authOpen, setAuthOpen] = useState(false);
+  const [navConfig, setNavConfig] = useState(null);
+
+  useEffect(()=>{
+    const sb=window.__supabase;
+    if(!sb)return;
+    sb.from('site_settings').select('key,value').then(({data})=>{
+      if(!data)return;
+      const cfg={};data.forEach(r=>{try{cfg[r.key]=r.value;}catch{}});
+      const root=document.documentElement;
+      if(cfg.theme_color_primary)   root.style.setProperty('--cel',cfg.theme_color_primary);
+      if(cfg.theme_color_secondary) root.style.setProperty('--red',cfg.theme_color_secondary);
+      if(cfg.theme_color_accent)    root.style.setProperty('--sun',cfg.theme_color_accent);
+      if(cfg.theme_font_titles)     root.style.setProperty('--fd',"'"+cfg.theme_font_titles+"',sans-serif");
+      if(cfg.theme_font_body)       root.style.setProperty('--fw',"'"+cfg.theme_font_body+"',sans-serif");
+      if(cfg.nav_items){try{setNavConfig(JSON.parse(cfg.nav_items));}catch{}}
+    }).catch(()=>{});
+  },[]);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { toasts, add: addToast } = useToasts();
 
@@ -7960,7 +7928,7 @@ function App() {
           </div>
           <div className="ng">
             <span className="nlbl">Navegación</span>
-            {(navConfig || NAV).map(n => {
+            {(navConfig||NAV).map(n => {
               const Icon = Ic[n.icon] || Ic['Home'];
               if (!Icon) return null;
               return (
