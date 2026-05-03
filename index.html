@@ -2701,7 +2701,6 @@ const ADMIN_TABS = [
   {id:'reportes',   l:'🚨 Reportes',     roles:['admin','moderator']},
   {id:'settings',   l:'⚙️ Config',       roles:['admin']},
   {id:'log',        l:'📋 Activity log', roles:['admin']},
-  {id:'editor',     l:'🎨 Editor Visual', roles:['admin']},
 ];
 
 function AdminPage({ user, addToast }) {
@@ -2763,7 +2762,7 @@ function AdminPage({ user, addToast }) {
         const [u,p,c,r,v] = await Promise.all([
           sb.from('profiles').select('id',{count:'exact',head:true}),
           sb.from('community_posts').select('id',{count:'exact',head:true}),
-          sb.from('comments').select('id',{count:'exact',head:true}),
+          sb.from('post_comments').select('id',{count:'exact',head:true}),
           sb.from('reports').select('id',{count:'exact',head:true}).eq('status','pending'),
           sb.from('var_votos').select('id',{count:'exact',head:true}),
         ]);
@@ -2774,6 +2773,8 @@ function AdminPage({ user, addToast }) {
         // últimos 8 logs
         const {data:lg} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(8);
         setLogs(lg||[]);
+        const {data:pm} = await sb.from('community_posts').select('id,content,username,created_at,likes_count').order('created_at',{ascending:false}).limit(20);
+        setPostsMod(pm||[]);
       }
       if (t === 'usuarios') {
         try {
