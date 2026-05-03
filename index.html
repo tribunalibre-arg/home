@@ -2760,39 +2760,44 @@ function AdminPage({ user, addToast }) {
     setLoading(true);
     try {
       if (t === 'overview') {
-        const [u,p,co,r,v] = await Promise.all([
+        const [u,p,c,r,v] = await Promise.all([
           sb.from('profiles').select('id',{count:'exact',head:true}),
           sb.from('community_posts').select('id',{count:'exact',head:true}),
-          sb.from('post_comments').select('id',{count:'exact',head:true}),
+          sb.from('comments').select('id',{count:'exact',head:true}),
           sb.from('reports').select('id',{count:'exact',head:true}).eq('status','pending'),
           sb.from('var_votos').select('id',{count:'exact',head:true}),
         ]);
         setStats({
           users: u.count||0, posts: p.count||0,
-          comments: co.count||0, reports: r.count||0, votos: v.count||0,
+          comments: c.count||0, reports: r.count||0, votos: v.count||0,
         });
+        // últimos 8 logs
         const {data:lg} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(8);
         setLogs(lg||[]);
-        const {data:pm} = await sb.from('community_posts').select('id,content,username,created_at,likes_count').order('created_at',{ascending:false}).limit(30);
-        setPostsMod(pm||[]);
       }
       if (t === 'usuarios') {
         try {
           const {data,error} = await sb.rpc('get_users_admin');
-          if (!error && data) {
+          if (!error && data && data.length > 0) {
             setUsuarios(data);
           } else {
-            // fallback sin email
             const {data:pd} = await sb.from('profiles')
-              .select('id, display_name, username, reputation, is_suspended, created_at, user_roles(roles(name))')
+              .select('id, username, points, created_at, user_roles(roles(name))')
               .order('created_at',{ascending:false}).limit(200);
             setUsuarios((pd||[]).map(u=>({
-              ...u, email:'(ejecutá el SQL get_users_admin)',
-              role: u.user_roles?.[0]?.roles?.name||'user'
+              id:u.id, email:'—', display_name:u.username, username:u.username,
+              reputation:u.points||0, is_suspended:false, created_at:u.created_at,
+              role:u.user_roles?.[0]?.roles?.name||'user'
             })));
           }
-        } catch(e) {
-          addToast({msg:'Error cargando usuarios: '+e.message, type:'err'});
+        } catch {
+          const {data:pd} = await sb.from('profiles')
+            .select('id, username, points, created_at')
+            .order('created_at',{ascending:false}).limit(200);
+          setUsuarios((pd||[]).map(u=>({
+            id:u.id, email:'—', display_name:u.username, username:u.username,
+            reputation:u.points||0, is_suspended:false, created_at:u.created_at, role:'user'
+          })));
         }
       }
       if (t === 'contenido') {
