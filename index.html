@@ -456,6 +456,22 @@ window.enrichArticlesWithImages = async function(posts, onUpdate) {
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{background:var(--bg);color:var(--tx);font-family:var(--fw);min-height:100vh;-webkit-font-smoothing:antialiased}
 h1,h2,h3{font-family:var(--fd)}
+
+/* ── MOBILE HOME SECTIONS ─────────────────────── */
+.mobile-sections-home{display:none}
+@media(max-width:700px){
+  .mobile-sections-home{display:block;margin-bottom:16px}
+  .msh-item{position:relative;height:90px;overflow:hidden;border-bottom:2px solid rgba(0,0,0,.2);cursor:pointer;display:flex;align-items:center;gap:12px}
+  .msh-item:first-child{border-radius:12px 12px 0 0}
+  .msh-item:last-child{border-radius:0 0 12px 12px;border-bottom:none}
+  .msh-img{position:absolute;inset:-15px;width:calc(100% + 30px);height:calc(100% + 30px);object-fit:cover;object-position:center center;z-index:0}
+  .msh-ov{position:absolute;inset:0;background:linear-gradient(to right,rgba(0,0,0,.82) 0%,rgba(0,0,0,.45) 65%,rgba(0,0,0,.15) 100%);z-index:1}
+  .msh-em{position:relative;z-index:2;font-size:28px;margin-left:14px;flex-shrink:0}
+  .msh-info{position:relative;z-index:2;flex:1;min-width:0}
+  .msh-tit{font-size:15px;font-weight:700;color:white;font-family:var(--fd);line-height:1.2;text-shadow:0 1px 4px rgba(0,0,0,.5)}
+  .msh-sub{font-size:11px;color:rgba(255,255,255,.8);margin-top:2px;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+  .msh-btn{position:relative;z-index:2;background:#27AE60;border-radius:50%;width:36px;height:36px;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-right:14px;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+}
 button{cursor:pointer;border:none;outline:none;font-family:var(--fw)}
 input,textarea,select{outline:none;font-family:var(--fw);color:var(--tx)}
 img{max-width:100%;height:auto;display:block}
@@ -1509,6 +1525,35 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
           <h2>Bienvenidos a tu mundo del deporte argentino</h2>
           <p>Noticias · Streaming · Comunidad · Periodismo 🇦🇷</p>
         </div>
+      </div>
+
+      {/* MOBILE HOME — solo en celular */}
+      <div className="mobile-sections-home">
+        {[
+          {id:'news',      em:'📰', l:'Noticias',           sub:'Deportes Argentina',      img:'logochico.png'},
+          {id:'comunidad', em:'👥', l:'Comunidad',           sub:'Foro y debates',          img:'Copilot_20260415_203438%20(1).png'},
+          {id:'streaming', em:'▶️', l:'Streaming',           sub:'En vivo ahora',           img:'stremmers.png'},
+          {id:'prode',     em:'🏆', l:'La Tribu Predice',    sub:'Pronósticos y prode',     img:'latribupredice3.JPG'},
+          {id:'revista',   em:'✏️', l:'La Tribu Descubre',   sub:'Revista y contenido',     img:'Latribudescubre.JPG'},
+          {id:'var',       em:'📹', l:'El VAR',              sub:'Votá las jugadas',        img:'VAR.JPG'},
+          {id:'red',       em:'🌐', l:'Red de Periodismo',   sub:'Colaboradores',           img:'reddeperiodismo.png'},
+          {id:'podcast',   em:'🎙', l:'Podcast',             sub:'Escuchá ahora',           img:'podcast.JPG'},
+        ].map(s=>(
+          <div key={s.id} className="msh-item" onClick={()=>onNav(s.id)}>
+            <img src={`https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/${s.img}`}
+              className="msh-img" alt={s.l}
+              onError={e=>{e.target.style.display='none';}}/>
+            <div className="msh-ov"/>
+            <div className="msh-em">{s.em}</div>
+            <div className="msh-info">
+              <div className="msh-tit">{s.l}</div>
+              <div className="msh-sub">{s.sub}</div>
+            </div>
+            <div className="msh-btn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3"><path d="M9 18l6-6-6-6"/></svg>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* BANNER DE ESTADO RSS */}
@@ -7289,8 +7334,7 @@ const NAV = [
 const MOBILE_NAV = [
   {id:'__menu__',  l:'Menú',     icon:'MenuIcon'},
   {id:'news',      l:'Noticias', icon:'News'},
-  {id:'comunidad', l:'Comunidad',icon:'Com'},
-  {id:'streaming', l:'Streaming',icon:'Stream'},
+  {id:'live',      l:'En Vivo',  icon:'Live'},
   {id:'profile',   l:'Perfil',   icon:'Profile'},
 ];
 const FULL_MOBILE_MENU = [
