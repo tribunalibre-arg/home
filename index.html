@@ -2774,30 +2774,31 @@ function AdminPage({ user, addToast }) {
         // últimos 8 logs
         const {data:lg} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(8);
         setLogs(lg||[]);
-        const {data:pm} = await sb.from('community_posts')
-          .select('id,content,username,created_at,likes_count')
-          .order('created_at',{ascending:false}).limit(30);
-        setPostsMod(pm||[]);
       }
       if (t === 'usuarios') {
         try {
-          const {data:rpcData,error:rpcErr} = await sb.rpc('get_users_admin');
-          if (!rpcErr && rpcData && rpcData.length > 0) {
-            setUsuarios(rpcData);
+          const {data,error} = await sb.rpc('get_users_admin');
+          if (!error && data && data.length > 0) {
+            setUsuarios(data);
           } else {
-            const [profRes,rolesRes] = await Promise.all([
-              sb.from('profiles').select('id,username,points,created_at').order('created_at',{ascending:false}).limit(200),
-              sb.from('user_roles').select('user_id,roles(name)')
-            ]);
-            const rolesMap={};
-            (rolesRes.data||[]).forEach(r=>{rolesMap[r.user_id]=r.roles?.name||'user';});
-            setUsuarios((profRes.data||[]).map(u=>({
-              id:u.id,email:'—',display_name:u.username,username:u.username,
-              reputation:u.points||0,is_suspended:false,created_at:u.created_at,
-              role:rolesMap[u.id]||'user'
+            const {data:pd} = await sb.from('profiles')
+              .select('id, username, points, created_at, user_roles(roles(name))')
+              .order('created_at',{ascending:false}).limit(200);
+            setUsuarios((pd||[]).map(u=>({
+              id:u.id, email:'—', display_name:u.username, username:u.username,
+              reputation:u.points||0, is_suspended:false, created_at:u.created_at,
+              role:u.user_roles?.[0]?.roles?.name||'user'
             })));
           }
-        } catch(e){addToast({msg:'Error usuarios: '+e.message,type:'err'});}
+        } catch {
+          const {data:pd} = await sb.from('profiles')
+            .select('id, username, points, created_at')
+            .order('created_at',{ascending:false}).limit(200);
+          setUsuarios((pd||[]).map(u=>({
+            id:u.id, email:'—', display_name:u.username, username:u.username,
+            reputation:u.points||0, is_suspended:false, created_at:u.created_at, role:'user'
+          })));
+        }
       }
       if (t === 'contenido') {
         const {data} = await sb.from('community_posts')
@@ -6992,7 +6993,8 @@ function IAModuleWidget() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + window.SUPABASE_ANON
+          'Authorization': 'Bearer ' + window.SUPABASE_ANON,
+          'apikey': window.SUPABASE_ANON
         },
         signal: ctrl.signal,
         body: JSON.stringify({
