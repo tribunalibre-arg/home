@@ -2701,6 +2701,7 @@ const ADMIN_TABS = [
   {id:'reportes',   l:'🚨 Reportes',     roles:['admin','moderator']},
   {id:'settings',   l:'⚙️ Config',       roles:['admin']},
   {id:'log',        l:'📋 Activity log', roles:['admin']},
+  {id:'editor',     l:'🎨 Editor Visual', roles:['admin']},
 ];
 
 function AdminPage({ user, addToast }) {
@@ -2762,7 +2763,7 @@ function AdminPage({ user, addToast }) {
         const [u,p,c,r,v] = await Promise.all([
           sb.from('profiles').select('id',{count:'exact',head:true}),
           sb.from('community_posts').select('id',{count:'exact',head:true}),
-          sb.from('post_comments').select('id',{count:'exact',head:true}),
+          sb.from('comments').select('id',{count:'exact',head:true}),
           sb.from('reports').select('id',{count:'exact',head:true}).eq('status','pending'),
           sb.from('var_votos').select('id',{count:'exact',head:true}),
         ]);
@@ -2773,17 +2774,22 @@ function AdminPage({ user, addToast }) {
         // últimos 8 logs
         const {data:lg} = await sb.from('activity_log').select('*').order('created_at',{ascending:false}).limit(8);
         setLogs(lg||[]);
-        const {data:pm} = await sb.from('community_posts').select('id,content,username,created_at,likes_count').order('created_at',{ascending:false}).limit(20);
-        setPostsMod(pm||[]);
       }
       if (t === 'usuarios') {
+        let loaded = false;
         try {
           const {data,error} = await sb.rpc('get_users_admin');
-          if (!error && data) { setUsuarios(data); }
-          else throw new Error('fallback');
-        } catch {
-          const {data} = await sb.from('profiles').select(`id, display_name, username, reputation, is_suspended, created_at, user_roles(roles(name))`).order('created_at',{ascending:false}).limit(100);
-          setUsuarios((data||[]).map(u=>({...u,email:'—',role:u.user_roles?.[0]?.roles?.name||'user'})));
+          if (!error && data && data.length > 0) { setUsuarios(data); loaded = true; }
+        } catch {}
+        if (!loaded) {
+          const {data} = await sb.from('profiles')
+            .select('id, display_name, username, reputation, is_suspended, created_at, user_roles(roles(name))')
+            .order('created_at',{ascending:false}).limit(200);
+          setUsuarios((data||[]).map(u=>({
+            ...u,
+            email: u.email || '—',
+            role: u.user_roles?.[0]?.roles?.name || 'user'
+          })));
         }
       }
       if (t === 'contenido') {
