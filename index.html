@@ -2777,27 +2777,27 @@ function AdminPage({ user, addToast }) {
       }
       if (t === 'usuarios') {
         try {
-          const {data,error} = await sb.rpc('get_users_admin');
-          if (!error && data && data.length > 0) {
-            setUsuarios(data);
+          // Intentar RPC primero (incluye email)
+          const {data:rpcData, error:rpcErr} = await sb.rpc('get_users_admin');
+          if (!rpcErr && rpcData && rpcData.length > 0) {
+            setUsuarios(rpcData);
           } else {
-            const {data:pd} = await sb.from('profiles')
-              .select('id, username, points, created_at, user_roles(roles(name))')
-              .order('created_at',{ascending:false}).limit(200);
-            setUsuarios((pd||[]).map(u=>({
+            // Fallback: dos queries separadas para evitar error de join
+            const [profRes, rolesRes] = await Promise.all([
+              sb.from('profiles').select('id, username, points, created_at').order('created_at',{ascending:false}).limit(200),
+              sb.from('user_roles').select('user_id, roles(name)')
+            ]);
+            const perfiles = profRes.data || [];
+            const rolesMap = {};
+            (rolesRes.data||[]).forEach(r=>{ rolesMap[r.user_id] = r.roles?.name || 'user'; });
+            setUsuarios(perfiles.map(u=>({
               id:u.id, email:'—', display_name:u.username, username:u.username,
               reputation:u.points||0, is_suspended:false, created_at:u.created_at,
-              role:u.user_roles?.[0]?.roles?.name||'user'
+              role: rolesMap[u.id] || 'user'
             })));
           }
-        } catch {
-          const {data:pd} = await sb.from('profiles')
-            .select('id, username, points, created_at')
-            .order('created_at',{ascending:false}).limit(200);
-          setUsuarios((pd||[]).map(u=>({
-            id:u.id, email:'—', display_name:u.username, username:u.username,
-            reputation:u.points||0, is_suspended:false, created_at:u.created_at, role:'user'
-          })));
+        } catch(e) {
+          addToast({msg:'Error cargando usuarios: '+e.message, type:'err'});
         }
       }
       if (t === 'contenido') {
