@@ -127,8 +127,8 @@ window.APISPORTS_KEY = '848bc1a907e1b48d68cd41db502c9ff5';  // ← pegá acá tu
 window.fetchNewsData = async function() {
   const key = window.NEWSDATA_KEY;
   if (!key || key.startsWith('TU_') || key.length < 10) return [];
-  const CACHE_KEY = 'tl_newsdata';
-  const CACHE_TTL = 15 * 60 * 1000;
+  const CACHE_KEY = 'tl_newsdata_v2';
+  const CACHE_TTL = 20 * 60 * 1000;
   try {
     const raw = localStorage.getItem(CACHE_KEY);
     if (raw) {
@@ -137,27 +137,34 @@ window.fetchNewsData = async function() {
     }
   } catch(e) {}
   try {
-    const url = `https://newsdata.io/api/1/news?apikey=${key}&country=ar&category=sports&language=es`;
+    const url = `https://newsdata.io/api/1/news?apikey=${key}&country=ar&category=sports&language=es&image=1`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('NewsData HTTP ' + resp.status);
     const json = await resp.json();
     if (!Array.isArray(json.results)) throw new Error('NewsData: sin resultados');
-    const items = json.results.map((a,i) => ({
-      _id: 'nd_' + i + '_' + (a.article_id||'').slice(-12),
-      title: a.title || '',
-      excerpt: (a.description || '').slice(0, 220),
-      publishedAt: a.pubDate || new Date().toISOString(),
-      coverImage: a.image_url || null,
-      cat: 'Deportes', category: 'Deportes',
-      meta: { sourceName: a.source_id || 'NewsData', sourceUrl: a.link || '#' }
-    })).filter(a => a.title && a.coverImage);
+    const items = json.results
+      .filter(a => a.title)
+      .map((a, i) => {
+        // Usar imagen real de NewsData si existe, sino null
+        const imgReal = a.image_url || null;
+        return {
+          _id: 'nd_' + i + '_' + (a.article_id||'').slice(-12),
+          title: a.title || '',
+          excerpt: (a.description || '').slice(0, 220),
+          publishedAt: a.pubDate || new Date().toISOString(),
+          coverImage: imgReal,
+          cat: 'Deportes', category: 'Deportes',
+          meta: { sourceName: a.source_id || 'NewsData', sourceUrl: a.link || '#' }
+        };
+      });
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
-    console.log('NewsData.io: ' + items.length + ' noticias con imagen');
+    console.log('NewsData.io: ' + items.length + ' noticias (' + items.filter(x=>x.coverImage).length + ' con imagen)');
     return items;
   } catch(e) {
     console.warn('NewsData.io:', e.message);
     return [];
   }
+
 };
 
 window.fetchGNews = async function() {
@@ -246,37 +253,8 @@ window.fetchTheNewsAPI = async function() {
 };
 
 // ── Imagen deportiva por tema (fallback gratuito sin key, usa Unsplash Source) ──
-// Imágenes de deportes via picsum.photos — 100% gratuito, sin CORS, siempre disponible
-// Cada categoría usa un rango de IDs con fotos de deportes/acción reales
-window.getSportsImage = function(titulo) {
-  const lower = (titulo || '').toLowerCase();
-  // Rangos de IDs de picsum que corresponden a fotos de deportes/acción
-  const SPORT_IDS = {
-    futbol:    [1051,1042,1000,1076,1025,1062,1071,1040],
-    rugby:     [1047,1058,1033,1010,1069,1080,1085,1090],
-    tenis:     [1028,1037,1055,1064,1073,1082,1091,1002],
-    basquet:   [1019,1046,1053,1060,1067,1074,1081,1088],
-    formula1:  [1022,1049,1056,1063,1070,1077,1084,1091],
-    default:   [1013,1043,1050,1057,1066,1075,1083,1089],
-  };
-  let cat = 'default';
-  if (lower.includes('fútbol')||lower.includes('gol')||lower.includes('river')||lower.includes('boca')||lower.includes('liga')||lower.includes('messi'))
-    cat = 'futbol';
-  else if (lower.includes('rugby')||lower.includes('pumas'))
-    cat = 'rugby';
-  else if (lower.includes('tenis')||lower.includes('atp')||lower.includes('wta')||lower.includes('cerúndolo'))
-    cat = 'tenis';
-  else if (lower.includes('básquet')||lower.includes('basket')||lower.includes('nba'))
-    cat = 'basquet';
-  else if (lower.includes('f1')||lower.includes('fórmula')||lower.includes('colapinto')||lower.includes('formula'))
-    cat = 'formula1';
-  const ids = SPORT_IDS[cat];
-  // Usar hash del titulo para elegir siempre la misma foto para el mismo artículo
-  let hash = 0;
-  for (let i = 0; i < lower.length; i++) hash = (hash * 31 + lower.charCodeAt(i)) & 0xffff;
-  const id = ids[hash % ids.length];
-  return 'https://picsum.photos/id/' + id + '/400/250';
-};
+// Sin imágenes falsas — si no hay imagen real se muestra el emoji del deporte
+window.getSportsImage = function(titulo) { return null; };
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
 window.RSS_FEEDS = [
@@ -1333,11 +1311,8 @@ function useNews(page=1, cat='', search='') {
       const withImg = [...gnewsItems, ...(newsDataItems||[]), ...(tnaItems||[])];
       const gnewsTitles = new Set(withImg.map(a => a.title.slice(0,40).toLowerCase()));
       const dedupRss    = rssItems.filter(a => !gnewsTitles.has(a.title.slice(0,40).toLowerCase()));
-      // Para RSS sin imagen, usar getSportsImage como fallback
-      const rssConFallback = dedupRss.map(a => ({
-        ...a,
-        coverImage: a.coverImage || (window.getSportsImage ? window.getSportsImage(a.title) : null)
-      }));
+      // Para RSS sin imagen real, no usar imagen falsa
+      const rssConFallback = dedupRss.map(a => ({ ...a }));
       let allPosts = [...withImg, ...rssConFallback].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
@@ -1417,12 +1392,27 @@ function NewsCard({ post, onClick }) {
     if (diff < 1440) return `Hace ${Math.floor(diff/60)}h`;
     return d.toLocaleDateString('es-AR');
   })();
+  const CAT_BG = {
+    'Fútbol':'linear-gradient(135deg,#0a3d1f,#1a6b35)',
+    'Rugby':'linear-gradient(135deg,#1a0a3d,#3d1a6b)',
+    'Tenis':'linear-gradient(135deg,#3d2a00,#7a5500)',
+    'Básquet':'linear-gradient(135deg,#3d1400,#8b3000)',
+    'Automovilismo':'linear-gradient(135deg,#001a3d,#003d8b)',
+    'Hockey':'linear-gradient(135deg,#003d2a,#006b4a)',
+    'default':'linear-gradient(135deg,#1a1a2e,#2d2d4e)',
+  };
+  const bgGrad = CAT_BG[cat] || CAT_BG['default'];
   const showImg = post.coverImage && !imgFailed;
   return (
     <div className="nc" onClick={onClick}>
       <div className="nc-img big">
-        {showImg && <img src={post.coverImage} alt={post.title} referrerPolicy="no-referrer" onError={()=>setImgFailed(true)}/>}
-        <div className="nc-em" style={{display:showImg?'none':'flex'}}>{em}</div>
+        {showImg
+          ? <img src={post.coverImage} alt={post.title} referrerPolicy="no-referrer" onError={()=>setImgFailed(true)}/>
+          : <div style={{width:'100%',height:'100%',background:bgGrad,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
+              <span style={{fontSize:44}}>{em}</span>
+              <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.5)',letterSpacing:1,textTransform:'uppercase'}}>{cat}</span>
+            </div>
+        }
         <div className="nc-cat"><span className="badge bc">{cat}</span></div>
       </div>
       <div className="nc-body">
