@@ -84,7 +84,7 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 // ═══════════════════════════════════════════════════════════
 // ── Cache version — cambiá el número si querés forzar re-fetch de noticias ──
 (function bustCache() {
-  var CACHE_VERSION = 'v5';  // incrementado para limpiar caché de noticias
+  var CACHE_VERSION = 'v6';  // incrementado para limpiar caché de noticias
   var stored = localStorage.getItem('tl_cache_version');
   if (stored !== CACHE_VERSION) {
     ['tl_gnews','tl_newsdata','tl_rss_cache'].forEach(function(k){ try{localStorage.removeItem(k);}catch(e){} });
@@ -2750,6 +2750,125 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
 }
 
 // ══════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════
+// EFEMÉRIDES ADMIN — carga manual de la efeméride del día
+// Tabla Supabase: efemeride_dia (fecha date PK, label text, texto text)
+// ══════════════════════════════════════════════════════════════
+function EfemeridesAdmin({ addToast }) {
+  const sb = window.__supabase;
+  const today = new Date().toISOString().slice(0,10);
+
+  const LABEL_OPTS = ['📅 Efeméride del Día','⚡ Dato Destacado','📰 Noticia del Día','🏆 Hecho Histórico','🎙️ Tip Periodístico'];
+
+  const [fecha,   setFecha]   = useState(today);
+  const [label,   setLabel]   = useState('📅 Efeméride del Día');
+  const [texto,   setTexto]   = useState('');
+  const [saving,  setSaving]  = useState(false);
+  const [lista,   setLista]   = useState([]);
+  const [loadingL,setLoadingL]= useState(true);
+
+  const inp = {border:'1px solid var(--br)',borderRadius:'var(--rs)',padding:'7px 10px',fontSize:12,background:'var(--bg)',color:'var(--tx)',width:'100%',boxSizing:'border-box'};
+  const lbl = {fontSize:11,fontWeight:700,color:'var(--tx2)',display:'block',marginBottom:5};
+
+  useEffect(() => {
+    if (!sb) { setLoadingL(false); return; }
+    sb.from('efemeride_dia').select('*').order('fecha',{ascending:false}).limit(10)
+      .then(({data}) => { setLista(data||[]); setLoadingL(false); });
+  }, [sb]);
+
+  async function guardar() {
+    if (!sb) return addToast('Sin conexión a Supabase','error');
+    if (!texto.trim()) return addToast('El texto no puede estar vacío','error');
+    setSaving(true);
+    const { error } = await sb.from('efemeride_dia').upsert({ fecha, label, texto: texto.trim() }, { onConflict: 'fecha' });
+    setSaving(false);
+    if (error) { addToast('Error: ' + error.message, 'error'); return; }
+    addToast('✅ Efeméride guardada para ' + fecha, 'success');
+    setTexto('');
+    // refrescar lista
+    const { data } = await sb.from('efemeride_dia').select('*').order('fecha',{ascending:false}).limit(10);
+    setLista(data||[]);
+  }
+
+  async function eliminar(f) {
+    if (!sb) return;
+    await sb.from('efemeride_dia').delete().eq('fecha', f);
+    setLista(l => l.filter(x => x.fecha !== f));
+    addToast('Efeméride eliminada','success');
+  }
+
+  return (
+    <div>
+      <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:700,marginBottom:14}}>📅 Efeméride del Día</div>
+
+      {!sb && (
+        <div style={{background:'rgba(192,57,43,.08)',border:'1px solid rgba(192,57,43,.3)',borderRadius:'var(--r)',padding:'12px 14px',marginBottom:14,fontSize:12,color:'var(--red)'}}>
+          ⚠️ Supabase no está conectado. Verificá las credenciales en el archivo.
+        </div>
+      )}
+
+      <div style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',padding:'14px',marginBottom:16}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:10}}>
+          <div>
+            <label style={lbl}>Fecha</label>
+            <input type="date" value={fecha} onChange={e=>setFecha(e.target.value)} style={inp}/>
+          </div>
+          <div>
+            <label style={lbl}>Tipo / Etiqueta</label>
+            <select value={label} onChange={e=>setLabel(e.target.value)}
+              style={{...inp,cursor:'pointer'}}>
+              {LABEL_OPTS.map(o=><option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:10}}>
+          <label style={lbl}>Texto (máx. ~120 palabras)</label>
+          <textarea value={texto} onChange={e=>setTexto(e.target.value)} rows={4}
+            placeholder="Escribí acá el dato, hecho histórico o efeméride para mostrar en el sidebar derecho..."
+            style={{...inp,resize:'vertical',lineHeight:1.5}}/>
+          <div style={{textAlign:'right',fontSize:10,color:'var(--tx3)',marginTop:3}}>
+            {texto.trim().split(/\s+/).filter(Boolean).length} palabras
+          </div>
+        </div>
+        <button onClick={guardar} disabled={saving||!sb}
+          style={{width:'100%',background:'var(--red)',color:'white',border:'none',borderRadius:'var(--r)',
+            padding:'11px',fontFamily:'var(--fd)',fontSize:13,fontWeight:700,cursor:'pointer'}}>
+          {saving ? '⏳ Guardando…' : '💾 Guardar efeméride'}
+        </button>
+      </div>
+
+      <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,marginBottom:8,color:'var(--tx2)'}}>
+        Últimas cargadas
+      </div>
+      {loadingL && <div style={{textAlign:'center',padding:20,color:'var(--tx3)',fontSize:12}}>Cargando…</div>}
+      {!loadingL && lista.length===0 && (
+        <div style={{textAlign:'center',padding:20,color:'var(--tx3)',fontSize:12}}>
+          Sin efemérides cargadas todavía
+        </div>
+      )}
+      {lista.map(e=>(
+        <div key={e.fecha} style={{background:'var(--white)',border:'1px solid var(--br)',borderRadius:'var(--r)',
+          padding:'10px 14px',marginBottom:8,display:'flex',gap:10,alignItems:'flex-start'}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{display:'flex',gap:8,alignItems:'center',marginBottom:4}}>
+              <span style={{fontFamily:'var(--fd)',fontSize:12,fontWeight:700,color:'var(--cel-d)'}}>{e.fecha}</span>
+              <span style={{fontSize:10,background:'var(--cel-xl)',color:'var(--cel-d)',borderRadius:20,padding:'2px 8px',fontWeight:700}}>{e.label}</span>
+              {e.fecha===today && <span style={{fontSize:10,background:'rgba(22,163,74,.12)',color:'#16A34A',borderRadius:20,padding:'2px 8px',fontWeight:700}}>✅ HOY</span>}
+            </div>
+            <div style={{fontSize:12,color:'var(--tx2)',lineHeight:1.4}}>{e.texto}</div>
+          </div>
+          <button onClick={()=>eliminar(e.fecha)}
+            style={{background:'rgba(192,57,43,.1)',border:'1px solid rgba(192,57,43,.3)',color:'var(--red)',
+              borderRadius:'var(--rs)',padding:'4px 10px',fontSize:11,cursor:'pointer',flexShrink:0}}>
+            🗑
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════
 // ADMIN — Panel de administración completo
 // Acceso: solo usuarios con rol admin o moderator en Supabase
 // ══════════════════════════════════════════════════════════════
@@ -2757,6 +2876,7 @@ const ADMIN_TABS = [
   {id:'overview',   l:'📊 Overview',     roles:['admin','moderator']},
   {id:'usuarios',   l:'👥 Usuarios',     roles:['admin']},
   {id:'contenido',  l:'📝 Contenido',    roles:['admin','moderator']},
+  {id:'efemeride',  l:'📅 Efeméride',    roles:['admin','moderator']},
   {id:'reportes',   l:'🚨 Reportes',     roles:['admin','moderator']},
   {id:'settings',   l:'⚙️ Config',       roles:['admin']},
   {id:'log',        l:'📋 Activity log', roles:['admin']},
@@ -3253,6 +3373,11 @@ function AdminPage({ user, addToast }) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* ── TAB: EFEMÉRIDE DEL DÍA ── */}
+      {tab==='efemeride' && !loading && (
+        <EfemeridesAdmin addToast={addToast} />
       )}
 
       {/* ── TAB: REPORTES ── */}
