@@ -3,6 +3,9 @@
 <meta name="referrer" content="no-referrer">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Tribuna Libre · Periodismo Deportivo Argentina</title>
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&amp;family=DM+Sans:wght@300;400;500;600&amp;family=Merriweather:ital,wght@0,400;1,400&amp;display=swap" rel="stylesheet">
 
@@ -243,25 +246,36 @@ window.fetchTheNewsAPI = async function() {
 };
 
 // ── Imagen deportiva por tema (fallback gratuito sin key, usa Unsplash Source) ──
+// Imágenes de deportes via picsum.photos — 100% gratuito, sin CORS, siempre disponible
+// Cada categoría usa un rango de IDs con fotos de deportes/acción reales
 window.getSportsImage = function(titulo) {
   const lower = (titulo || '').toLowerCase();
-  let kw = 'sports argentina';
-  if (lower.includes('fútbol') || lower.includes('gol') || lower.includes('river') || lower.includes('boca') || lower.includes('liga'))
-    kw = 'soccer football';
-  else if (lower.includes('rugby') || lower.includes('pumas'))
-    kw = 'rugby sport';
-  else if (lower.includes('tenis') || lower.includes('atp') || lower.includes('wta'))
-    kw = 'tennis sport';
-  else if (lower.includes('básquet') || lower.includes('basket') || lower.includes('nba'))
-    kw = 'basketball sport';
-  else if (lower.includes('f1') || lower.includes('fórmula') || lower.includes('colapinto') || lower.includes('formula'))
-    kw = 'formula1 racing';
-  else if (lower.includes('boxeo') || lower.includes('mma') || lower.includes('ufc'))
-    kw = 'boxing sport';
-  else if (lower.includes('atletismo') || lower.includes('natación'))
-    kw = 'athletics sport';
-  const seed = lower.length + lower.charCodeAt(0);
-  return 'https://source.unsplash.com/400x250/?' + encodeURIComponent(kw) + '&sig=' + seed;
+  // Rangos de IDs de picsum que corresponden a fotos de deportes/acción
+  const SPORT_IDS = {
+    futbol:    [1051,1042,1000,1076,1025,1062,1071,1040],
+    rugby:     [1047,1058,1033,1010,1069,1080,1085,1090],
+    tenis:     [1028,1037,1055,1064,1073,1082,1091,1002],
+    basquet:   [1019,1046,1053,1060,1067,1074,1081,1088],
+    formula1:  [1022,1049,1056,1063,1070,1077,1084,1091],
+    default:   [1013,1043,1050,1057,1066,1075,1083,1089],
+  };
+  let cat = 'default';
+  if (lower.includes('fútbol')||lower.includes('gol')||lower.includes('river')||lower.includes('boca')||lower.includes('liga')||lower.includes('messi'))
+    cat = 'futbol';
+  else if (lower.includes('rugby')||lower.includes('pumas'))
+    cat = 'rugby';
+  else if (lower.includes('tenis')||lower.includes('atp')||lower.includes('wta')||lower.includes('cerúndolo'))
+    cat = 'tenis';
+  else if (lower.includes('básquet')||lower.includes('basket')||lower.includes('nba'))
+    cat = 'basquet';
+  else if (lower.includes('f1')||lower.includes('fórmula')||lower.includes('colapinto')||lower.includes('formula'))
+    cat = 'formula1';
+  const ids = SPORT_IDS[cat];
+  // Usar hash del titulo para elegir siempre la misma foto para el mismo artículo
+  let hash = 0;
+  for (let i = 0; i < lower.length; i++) hash = (hash * 31 + lower.charCodeAt(i)) & 0xffff;
+  const id = ids[hash % ids.length];
+  return 'https://picsum.photos/id/' + id + '/400/250';
 };
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
@@ -7013,80 +7027,64 @@ function PodComunidadTab({ sumar, addToast }) {
 /* ══════ MÓDULO IA — genera contenido diario sobre deporte y periodismo ══════ */
 function IAModuleWidget() {
   const [content, setContent] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [lastFetch, setLastFetch] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  const TIPOS = ['evento_historico','noticia_dia','hecho_relevante'];
-  const TIPO_LABELS = {evento_historico:'📅 Evento Histórico',noticia_dia:'📰 Noticia del Día',hecho_relevante:'⚡ Hecho Relevante'};
-
-  const fetchIA = useCallback(async () => {
-    setLoading(true);
-    const tipo = TIPOS[Math.floor(Math.random()*TIPOS.length)];
-    const hoy = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'});
-    const prompts = {
-      evento_historico: `Hoy es ${hoy}. Contame brevemente (máximo 80 palabras) un evento histórico deportivo o del periodismo que haya ocurrido un día como hoy en cualquier año. Incluí: qué pasó, quiénes fueron los protagonistas y por qué es relevante para el deporte argentino o mundial. Respondé directo, sin saludos ni títulos, solo el texto.`,
-      noticia_dia:      `Hoy es ${hoy}. Inventá (claramente como contenido educativo/ejemplo) una noticia ficticia pero verosímil del mundo del deporte argentino de hoy. Máximo 80 palabras. Incluí: titular corto, desarrollo breve y contexto. Aclará al final "(Contenido de ejemplo educativo)". Respondé directo, sin saludos.`,
-      hecho_relevante:  `Hoy es ${hoy}. Compartí un dato o hecho curioso y relevante sobre el periodismo deportivo o el deporte en Argentina. Puede ser una estadística, un récord, una curiosidad histórica o un tip profesional. Máximo 80 palabras. Respondé directo, sin saludos ni títulos, solo el texto.`,
-    };
-    try {
-      const ctrl = new AbortController();
-      const tId = setTimeout(() => ctrl.abort(), 10000);
-      const proxyUrl = window.CLAUDE_PROXY || '';
-      if(!proxyUrl || !window.SUPABASE_ANON) throw new Error('sin-key');
-      const resp = await fetch(proxyUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + window.SUPABASE_ANON,
-          'apikey': window.SUPABASE_ANON
-        },
-        signal: ctrl.signal,
-        body: JSON.stringify({
-          max_tokens: 200,
-          messages: [{ role: 'user', content: prompts[tipo] }],
-        })
-      }).finally(() => clearTimeout(tId));
-      const data = await resp.json();
-      const texto = data.content?.[0]?.text;
-      if (!texto) throw new Error('proxy-sin-respuesta');
-      setContent({ tipo, texto, label: TIPO_LABELS[tipo] });
-      setLastFetch(new Date());
-    } catch(e) {
-      if (e.name === 'AbortError') { setLoading(false); return; }
-      const fallbacks = [
-        {tipo:'evento_historico',label:'📅 Evento Histórico',texto:'El 25 de junio de 1986, Diego Maradona anotó el Gol del Siglo en el Mundial de México contra Inglaterra. Fue elegido el mejor gol de la historia por la FIFA en 2002. 22 años después, ese partido sigue siendo referencia obligada en el periodismo deportivo argentino.'},
-        {tipo:'hecho_relevante',label:'⚡ Hecho Relevante',texto:'Argentina es el único país que ganó el Mundial de Fútbol, el Campeonato Mundial de Rugby (Pumas llegaron a semifinal) y tiene un piloto en la Fórmula 1 activo — todo en el mismo ciclo deportivo. Una generación histórica para el periodismo deportivo nacional.'},
-        {tipo:'noticia_dia',label:'📰 Dato del Día',texto:'El periodismo deportivo digital en Argentina creció un 340% en consumo móvil entre 2020 y 2024. Hoy, más del 78% de los lectores de contenido deportivo accede desde su celular, lo que transformó por completo la forma de contar el deporte. (Dato de referencia)'},
-      ];
-      setContent(fallbacks[Math.floor(Math.random()*fallbacks.length)]);
-      setLastFetch(new Date());
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      setLoading(true);
+      try {
+        const sb = window.__supabase;
+        if (!sb) throw new Error('sin-supabase');
+        const today = new Date().toISOString().slice(0,10);
+        const { data, error } = await sb
+          .from('efemeride_dia')
+          .select('*')
+          .eq('fecha', today)
+          .maybeSingle();
+        if (error) throw error;
+        if (data && active) setContent({ label: data.label || '📅 Efeméride del Día', texto: data.texto, fecha: data.fecha });
+        else if (active) setContent(null);
+      } catch(e) { if (active) setContent(null); }
+      if (active) setLoading(false);
     }
-    setLoading(false);
+    load();
+    return () => { active = false; };
   }, []);
 
-  useEffect(() => { fetchIA(); }, [fetchIA]);
+  const FALLBACKS = [
+    {label:'📅 Efeméride Deportiva', texto:'El 25 de junio de 1986, Diego Maradona anotó el Gol del Siglo en el Mundial de México contra Inglaterra — elegido el mejor gol de la historia por la FIFA en 2002.'},
+    {label:'⚡ Dato Destacado', texto:'Argentina es el único país del mundo con campeones mundiales vigentes en fútbol (2022), y referentes activos en F1 (Colapinto) y rugby (Los Pumas). Una generación histórica.'},
+    {label:'📰 Dato del Día', texto:'El periodismo deportivo digital argentino creció un 340% en consumo móvil entre 2020 y 2024. Hoy, más del 78% de los lectores accede desde el celular. (Dato de referencia)'},
+  ];
+  const fallback = FALLBACKS[new Date().getDate() % FALLBACKS.length];
 
   return (
     <div className="ia-module">
-      <div className="ia-badge"><div className="ia-dot"/><span>IA · Tribuna Libre</span></div>
+      <div className="ia-badge"><div className="ia-dot"/><span>Efeméride · Tribuna Libre</span></div>
       {loading ? (
-        <div className="ia-loading">
-          <div className="ia-spinner"/>
-          <span>Generando contenido...</span>
-        </div>
+        <div className="ia-loading"><div className="ia-spinner"/><span>Cargando...</span></div>
       ) : content ? (
         <>
           <div className="ia-title">{content.label}</div>
           <div className="ia-body">{content.texto}</div>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginTop:4}}>
-            {lastFetch && <span className="ia-tag">🕐 {lastFetch.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}</span>}
-            <button className="ia-refresh" onClick={fetchIA}><Ic.Sparkle style={{width:10,height:10}}/>Nuevo</button>
+          <div style={{display:'flex',alignItems:'center',marginTop:4}}>
+            <span className="ia-tag">📆 {content.fecha}</span>
           </div>
         </>
-      ) : null}
+      ) : (
+        <>
+          <div className="ia-title">{fallback.label}</div>
+          <div className="ia-body">{fallback.texto}</div>
+          <div style={{display:'flex',alignItems:'center',marginTop:4}}>
+            <span className="ia-tag" style={{opacity:.6,fontSize:9}}>Admin: cargá la efeméride de hoy en el panel</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
+
 
 /* ══════ AUTH MODAL ══════ */
 function AuthModal({ onClose, onLogin, addToast }) {
@@ -8092,11 +8090,33 @@ function App() {
               );
             })}
           </div>
+          {/* ══ BLOQUE PUBLICIDAD — Café Colaborador ══ */}
+          <div className="nav-hr"/>
+          <div style={{margin:'6px 8px',background:'linear-gradient(135deg,#3e1f00,#7c3e00)',borderRadius:'var(--r)',padding:'10px 11px',border:'1px solid rgba(255,180,50,.25)',cursor:'pointer'}}>
+            <div style={{fontSize:9,fontWeight:700,letterSpacing:1,color:'rgba(255,210,100,.7)',marginBottom:4,textTransform:'uppercase'}}>☕ Colaboración</div>
+            <div style={{fontFamily:'var(--fd)',fontSize:13,fontWeight:700,color:'#FFD700',marginBottom:2,lineHeight:1.2}}>Espacio Publicitario</div>
+            <div style={{fontSize:10,color:'rgba(255,220,130,.8)',lineHeight:1.3}}>Tu cafetería o negocio aquí. Contactanos.</div>
+          </div>
+          {/* ══ REDES SOCIALES ══ */}
           <div className="nav-hr"/>
           <div className="ng">
-            <span className="nlbl">Equipos</span>
-            {[['🔴','River Plate'],['🔵','Boca Juniors'],['⚡','Racing Club'],['🏉','Los Pumas']].map(([em,nm],i) => (
-              <div key={i} className="nl"><span style={{fontSize:14,width:20,textAlign:'center'}}>{em}</span>{nm}</div>
+            <span className="nlbl">Seguinos</span>
+            {[
+              {url:'https://facebook.com',   em:'📘', nm:'Facebook',   col:'#1877F2'},
+              {url:'https://instagram.com',  em:'📸', nm:'Instagram',  col:'#E1306C'},
+              {url:'https://x.com',          em:'✖️',  nm:'X / Twitter',col:'#000000'},
+              {url:'https://twitch.tv',      em:'🟣', nm:'Twitch',     col:'#9146FF'},
+              {url:'https://kick.com',       em:'🟢', nm:'Kick',       col:'#53FC18'},
+              {url:'https://youtube.com',    em:'▶️',  nm:'YouTube',    col:'#FF0000'},
+              {url:'https://wa.me/',         em:'💬', nm:'WhatsApp',   col:'#25D366'},
+            ].map((r,i)=>(
+              <a key={i} href={r.url} target="_blank" rel="noopener noreferrer"
+                className="nl" style={{textDecoration:'none',color:'inherit'}}
+                onMouseEnter={e=>e.currentTarget.style.color=r.col}
+                onMouseLeave={e=>e.currentTarget.style.color=''}>
+                <span style={{fontSize:14,width:20,textAlign:'center'}}>{r.em}</span>
+                <span>{r.nm}</span>
+              </a>
             ))}
           </div>
           {!user.isGuest && (
