@@ -111,7 +111,7 @@ window.NEWSDATA_KEY = 'pub_b6a0630b0e984891bb8836a1605fc699';  // ← PEGÁ ACÁ
 
 // ── TheNewsAPI.com — imágenes garantizadas, CORS abierto, 100 req/día gratis ──
 // Registrate en https://www.thenewsapi.com → copiá tu API Token
-window.THENEWSAPI_KEY = '65bcx7TNneIboXSTEgnr7IwZd4unIQPrbSIHPdv0';  // ← PEGÁ ACÁ TU KEY DE THENEWSAPI.COM
+window.THENEWSAPI_KEY = 'TU_THENEWSAPI_KEY_AQUI';  // ← PEGÁ ACÁ TU KEY DE THENEWSAPI.COM
 
 // ── FOOTBALL-DATA.ORG — Europa (CL, La Liga, Premier, Serie A, etc.) ─────
 // Registrate en https://www.football-data.org/client/register
@@ -137,26 +137,23 @@ window.fetchNewsData = async function() {
     }
   } catch(e) {}
   try {
-    const url = `https://newsdata.io/api/1/news?apikey=${key}&country=ar&category=sports&language=es&image=1`;
+    // Sin &image=1 — traemos más artículos y llenamos con getSportsImage los que no tengan foto
+    const url = `https://newsdata.io/api/1/news?apikey=${key}&country=ar&category=sports&language=es`;
     const resp = await fetch(url);
     if (!resp.ok) throw new Error('NewsData HTTP ' + resp.status);
     const json = await resp.json();
     if (!Array.isArray(json.results)) throw new Error('NewsData: sin resultados');
     const items = json.results
       .filter(a => a.title)
-      .map((a, i) => {
-        // Usar imagen real de NewsData si existe, sino null
-        const imgReal = a.image_url || null;
-        return {
-          _id: 'nd_' + i + '_' + (a.article_id||'').slice(-12),
-          title: a.title || '',
-          excerpt: (a.description || '').slice(0, 220),
-          publishedAt: a.pubDate || new Date().toISOString(),
-          coverImage: imgReal,
-          cat: 'Deportes', category: 'Deportes',
-          meta: { sourceName: a.source_id || 'NewsData', sourceUrl: a.link || '#' }
-        };
-      });
+      .map((a, i) => ({
+        _id: 'nd_' + i + '_' + (a.article_id||'').slice(-12),
+        title: a.title || '',
+        excerpt: (a.description || '').slice(0, 220),
+        publishedAt: a.pubDate || new Date().toISOString(),
+        coverImage: a.image_url || window.getSportsImage(a.title || ''),
+        cat: 'Deportes', category: 'Deportes',
+        meta: { sourceName: a.source_id || 'NewsData', sourceUrl: a.link || '#' }
+      }));
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
     console.log('NewsData.io: ' + items.length + ' noticias (' + items.filter(x=>x.coverImage).length + ' con imagen)');
     return items;
@@ -242,7 +239,7 @@ window.fetchTheNewsAPI = async function() {
       coverImage:  a.image_url || window.getSportsImage(a.title || ''),
       cat:         'Deportes', category: 'Deportes',
       meta:        { sourceName: a.source || 'TheNewsAPI', sourceUrl: a.url || '#' }
-    })).filter(a => a.title && a.coverImage);
+    })).filter(a => a.title);
     try { localStorage.setItem(CACHE_KEY, JSON.stringify({ data: items, ts: Date.now() })); } catch(e) {}
     console.log('TheNewsAPI ✓ (' + items.length + ' artículos con imagen)');
     return items;
@@ -252,9 +249,43 @@ window.fetchTheNewsAPI = async function() {
   }
 };
 
-// ── Imagen deportiva por tema (fallback gratuito sin key, usa Unsplash Source) ──
-// Sin imágenes falsas — si no hay imagen real se muestra el emoji del deporte
-window.getSportsImage = function(titulo) { return null; };
+// ── Imagen deportiva por tema — fotos Unsplash curadas por keyword ──
+// Se usa como fallback cuando la noticia no trae imagen propia.
+// IDs verificados de Unsplash, sin restricciones de referrer.
+window.getSportsImage = function(titulo) {
+  const t = (titulo || '').toLowerCase();
+  const MAP = [
+    [['selección','albiceleste','mundial','copa del mundo','eliminatorias'],
+      'photo-1574629810360-7efbbe195018'],
+    [['fútbol','futbol','gol','river','boca','racing','independiente','belgrano',
+       'vélez','hurac','libertadores','sudamericana','liga profesional','primera división',
+       'superclásico','arsenal','san martín','talleres'],
+      'photo-1431324155629-1a6dac1f3579'],
+    [['rugby','pumas','scrum','line-out','try','toulon','stade','top 14'],
+      'photo-1562077981-4d7eafd44932'],
+    [['tenis','tennis','roland','wimbledon','us open','atp','wta',
+       'cerundolo','del potro','federer','djokovic','alcaraz'],
+      'photo-1554068865-24ceec13d724'],
+    [['básquet','basquet','basket','nba','liga nacional','campazzo','vildoza','laprovittola'],
+      'photo-1546519638-68e109498ffc'],
+    [['fórmula','formula','f1','colapinto','verstappen','ferrari','hamilton','motogp','moto gp'],
+      'photo-1558618666-fcd25c85cd64'],
+    [['hockey','leonas','palo','puck'],
+      'photo-1580748141549-71748dbe0bdc'],
+    [['boxeo','box','ufc','mma','pelea','combate','ring'],
+      'photo-1547153760-18fc86324498'],
+    [['atletismo','maratón','natación','olimpíadas','juegos olímpicos','decatlón','salto'],
+      'photo-1517649763962-0c623066013b'],
+    [['voley','vóleibol','volley','netball'],
+      'photo-1612872087720-bb876e2e67d1'],
+  ];
+  for (const [kws, id] of MAP) {
+    if (kws.some(k => t.includes(k)))
+      return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&h=450&q=70`;
+  }
+  // Deporte genérico — estadio con tribunas
+  return `https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&h=450&q=70`;
+};
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
 window.RSS_FEEDS = [
@@ -392,27 +423,32 @@ window.enrichArticlesWithImages = async function(posts, onUpdate) {
 
   const timeout = ms => new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms));
   const fetchT  = (url, ms) => Promise.race([fetch(url), timeout(ms)]);
-  const PROXY = url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-  const OG_RE = /<meta[^>]+(?:property=["']og:image["'][^>]+content=["']([^"']+)["']|content=["']([^"']+)["'][^>]+property=["']og:image["'])/i;
+  const OG_PROXIES = [
+    url => `https://corsproxy.io/?${encodeURIComponent(url)}`,
+    url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  ];
+  const OG_RE   = /<meta[^>]+(?:property=["']og:image["'][^>]+content=["']([^"']+)["']|content=["']([^"']+)["'][^>]+property=["']og:image["'])/i;
   const TWIT_RE = /<meta[^>]+(?:name=["']twitter:image["'][^>]+content=["']([^"']+)["']|content=["']([^"']+)["'][^>]+name=["']twitter:image["'])/i;
 
   async function getOgImg(url) {
     const ck = 'og_' + encodeURIComponent(url).slice(-80);
     try {
       const hit = localStorage.getItem(ck);
-      if (hit !== null) return hit || null; // '' = ya se intentó, sin imagen
+      if (hit !== null) return hit || null;
     } catch(e) {}
     let imgUrl = null;
-    try {
-      const resp = await fetchT(PROXY(url), 8000);
-      if (!resp.ok) throw new Error('proxy ' + resp.status);
-      const html = await resp.text();
-      const m = html.match(OG_RE) || html.match(TWIT_RE);
-      if (m) imgUrl = (m[1] || m[2] || '').trim() || null;
-      // Validar que no sea un data: URL ni un path relativo
-      if (imgUrl && (imgUrl.startsWith('data:') || !imgUrl.startsWith('http'))) imgUrl = null;
-    } catch(e) {
-      console.log('OG fetch fail:', url, e.message);
+    for (const makeProxy of OG_PROXIES) {
+      try {
+        const resp = await fetchT(makeProxy(url), 6000);
+        if (!resp.ok) throw new Error('proxy ' + resp.status);
+        const html = await resp.text();
+        const m = html.match(OG_RE) || html.match(TWIT_RE);
+        if (m) imgUrl = (m[1] || m[2] || '').trim() || null;
+        if (imgUrl && (imgUrl.startsWith('data:') || !imgUrl.startsWith('http'))) imgUrl = null;
+        if (imgUrl) break;
+      } catch(e) {
+        console.log('OG fetch fail:', url, e.message);
+      }
     }
     try { localStorage.setItem(ck, imgUrl || ''); } catch(e) {}
     return imgUrl;
@@ -1311,8 +1347,11 @@ function useNews(page=1, cat='', search='') {
       const withImg = [...gnewsItems, ...(newsDataItems||[]), ...(tnaItems||[])];
       const gnewsTitles = new Set(withImg.map(a => a.title.slice(0,40).toLowerCase()));
       const dedupRss    = rssItems.filter(a => !gnewsTitles.has(a.title.slice(0,40).toLowerCase()));
-      // Para RSS sin imagen real, no usar imagen falsa
-      const rssConFallback = dedupRss.map(a => ({ ...a }));
+      // Para RSS sin imagen real, usar getSportsImage según el título
+      const rssConFallback = dedupRss.map(a => ({
+        ...a,
+        coverImage: a.coverImage || window.getSportsImage(a.title)
+      }));
       let allPosts = [...withImg, ...rssConFallback].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
