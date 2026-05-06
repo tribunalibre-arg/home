@@ -8123,6 +8123,250 @@ function EnVivoPage({ addToast }) {
     </div>
   );
 }
+/* ═══════════════════════════════════════════════════
+   MOBILE SPLASH — Pantalla principal en mobile
+   ═══════════════════════════════════════════════════ */
+function MobileSplashPage({ onNav }) {
+  const CARDS = [
+    {
+      id: 'news',
+      label: 'Noticias',
+      img: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=300&q=80',
+      imgPos: 'center center',
+      tint: '#1a3a7c',
+      badge: null,
+    },
+    {
+      id: 'comunidad',
+      label: 'Comunidad',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/Copilot_20260415_203438%20(1).png',
+      imgPos: 'center center',
+      tint: '#0a4020',
+      badge: null,
+    },
+    {
+      id: 'streaming',
+      label: 'Streaming',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/stremmers.png',
+      imgPos: 'center center',
+      tint: '#6a0a0a',
+      badge: 'LIVE',
+    },
+    {
+      id: 'prode',
+      label: 'La Tribuna Predice',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/latribupredice3.JPG',
+      imgPos: 'right center',
+      tint: '#5a3000',
+      badge: null,
+    },
+    {
+      id: 'copa',
+      label: 'La Tribuna Descubre',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/Latribudescubre.JPG',
+      imgPos: 'right center',
+      tint: '#003a38',
+      badge: null,
+    },
+    {
+      id: 'var',
+      label: 'El VAR',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/VAR.JPG',
+      imgPos: 'right center',
+      tint: '#1a1060',
+      badge: 'V.A.R.',
+      badgePos: 'left',
+    },
+    {
+      id: 'podcast',
+      label: 'Podcast',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/podcast.JPG',
+      imgPos: 'right center',
+      tint: '#30085a',
+      badge: null,
+    },
+    {
+      id: 'red',
+      label: 'Red de Periodismo',
+      img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/reddeperiodismo.png',
+      imgPos: 'center center',
+      tint: '#4a1c08',
+      badge: null,
+    },
+  ];
+
+  return (
+    <div style={{
+      position:'fixed', inset:0, zIndex:900,
+      background:'#0a1628',
+      display:'flex', flexDirection:'column', alignItems:'center',
+      overflowY:'auto', overflowX:'hidden',
+    }}>
+      {/* Fondo estadio */}
+      <div style={{
+        position:'fixed', inset:0, zIndex:0,
+        backgroundImage:"url('https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?w=600&q=80')",
+        backgroundSize:'cover', backgroundPosition:'center top',
+        filter:'saturate(0.65) brightness(0.38)',
+      }}/>
+      <div style={{
+        position:'fixed', inset:0, zIndex:1,
+        background:'linear-gradient(180deg,rgba(6,14,36,.6) 0%,rgba(6,14,36,.15) 35%,rgba(6,14,36,.5) 65%,rgba(6,14,36,.97) 100%)',
+      }}/>
+      <div style={{
+        position:'fixed', inset:0, zIndex:2,
+        backgroundImage:'radial-gradient(rgba(255,255,255,.05) 1px,transparent 1px)',
+        backgroundSize:'16px 16px',
+      }}/>
+
+      {/* Contenido */}
+      <div style={{
+        position:'relative', zIndex:10,
+        width:'100%', maxWidth:430,
+        display:'flex', flexDirection:'column', alignItems:'center',
+        paddingBottom:100,
+      }}>
+        {/* LOGO */}
+        <div style={{
+          width:'100%', padding:'34px 20px 10px',
+          display:'flex', flexDirection:'column', alignItems:'center',
+        }}>
+          <img
+            src="https://raw.githubusercontent.com/bioscanrural/tribunalibre/refs/heads/main/imagenes/logochico.png"
+            alt="Tribuna Libre"
+            style={{
+              width:210, display:'block',
+              mixBlendMode:'screen',
+              filter:'brightness(1.05) contrast(1.05)',
+            }}
+          />
+          <div style={{
+            width:'60%', height:1,
+            background:'linear-gradient(90deg,transparent,rgba(240,192,48,.45),transparent)',
+            margin:'3px 0 13px',
+          }}/>
+          <div style={{
+            fontFamily:"'Oswald',sans-serif", fontWeight:700,
+            fontSize:24, letterSpacing:'3.5px', color:'#fff',
+            textShadow:'0 2px 12px rgba(0,0,0,.7)', textAlign:'center',
+          }}>¡BIENVENIDOS!</div>
+        </div>
+
+        {/* GRID DE SECCIONES */}
+        <div style={{
+          width:'100%', padding:'4px 14px 0',
+          display:'grid', gridTemplateColumns:'1fr 1fr', gap:11,
+        }}>
+          {CARDS.map(card => (
+            <div
+              key={card.id}
+              onClick={() => onNav(card.id)}
+              style={{
+                position:'relative', borderRadius:14, overflow:'hidden',
+                border:'1px solid rgba(255,255,255,.18)',
+                cursor:'pointer', aspectRatio:'1.05/1',
+                display:'flex', flexDirection:'column',
+                alignItems:'center', justifyContent:'flex-end',
+                WebkitTapHighlightColor:'transparent',
+              }}
+            >
+              {/* Imagen */}
+              <div style={{
+                position:'absolute', inset:0,
+                backgroundImage:`url('${card.img}')`,
+                backgroundSize:'cover',
+                backgroundPosition: card.imgPos,
+              }}/>
+              {/* Overlay oscuro */}
+              <div style={{
+                position:'absolute', inset:0,
+                background:'linear-gradient(to bottom,rgba(0,0,0,.03) 0%,rgba(0,0,0,.42) 50%,rgba(0,0,0,.88) 100%)',
+              }}/>
+              {/* Tinte de color */}
+              <div style={{
+                position:'absolute', inset:0,
+                background: card.tint,
+                mixBlendMode:'multiply', opacity:.35,
+              }}/>
+              {/* Badge LIVE */}
+              {card.badge === 'LIVE' && (
+                <div style={{
+                  position:'absolute', top:9, right:9, zIndex:3,
+                  background:'#e53030', color:'#fff',
+                  fontFamily:"'DM Sans',sans-serif", fontWeight:700,
+                  fontSize:9, letterSpacing:'.8px',
+                  padding:'2px 7px', borderRadius:4, textTransform:'uppercase',
+                  boxShadow:'0 1px 6px rgba(229,48,48,.6)',
+                }}>LIVE</div>
+              )}
+              {/* Badge VAR */}
+              {card.badge === 'V.A.R.' && (
+                <div style={{
+                  position:'absolute', top:9, left:9, zIndex:3,
+                  background:'rgba(20,40,130,.92)',
+                  border:'1.5px solid rgba(255,255,255,.4)',
+                  color:'#fff',
+                  fontFamily:"'Oswald',sans-serif", fontWeight:700,
+                  fontSize:11, letterSpacing:'1.5px',
+                  padding:'2px 8px', borderRadius:5,
+                }}>V.A.R.</div>
+              )}
+              {/* Label */}
+              <div style={{
+                position:'relative', zIndex:2,
+                width:'100%', padding:'0 10px 12px', textAlign:'center',
+              }}>
+                <div style={{
+                  fontFamily:"'Oswald',sans-serif", fontWeight:600,
+                  fontSize:13.5, letterSpacing:'.5px', color:'#fff',
+                  textShadow:'0 1px 8px rgba(0,0,0,.95)', lineHeight:1.2,
+                }}>{card.label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* DIVISOR DORADO */}
+        <div style={{
+          width:80, height:2,
+          background:'linear-gradient(90deg,transparent,#f0c030,transparent)',
+          margin:'20px auto 16px',
+        }}/>
+
+        {/* BOTÓN ENTRAR */}
+        <div style={{width:'100%', padding:'0 14px'}}>
+          <div
+            onClick={() => onNav('news')}
+            style={{
+              display:'flex', alignItems:'center', justifyContent:'center', gap:10,
+              width:'100%', padding:'16px 24px', borderRadius:50,
+              background:'linear-gradient(135deg,#1e5fa8,#2b80d4,#1e5fa8)',
+              border:'2px solid rgba(255,255,255,.3)',
+              boxShadow:'0 4px 22px rgba(30,95,168,.65),inset 0 1px 0 rgba(255,255,255,.2)',
+              fontFamily:"'Oswald',sans-serif", fontWeight:700,
+              fontSize:16, letterSpacing:'2.5px', color:'#fff',
+              textTransform:'uppercase', cursor:'pointer',
+            }}
+          >
+            ENTRAR A LA TRIBUNA
+            <div style={{
+              width:22, height:22, background:'rgba(255,255,255,.2)',
+              borderRadius:'50%', display:'flex', alignItems:'center',
+              justifyContent:'center', fontSize:13, flexShrink:0,
+            }}>▶</div>
+          </div>
+        </div>
+
+        <div style={{
+          marginTop:14, fontFamily:"'DM Sans',sans-serif", fontSize:11,
+          color:'rgba(255,255,255,.28)', letterSpacing:'.8px',
+          textTransform:'uppercase', textAlign:'center',
+        }}>Periodismo Deportivo · Argentina</div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [page, setPage]     = useState('home');
   const [article, setArticle] = useState(null);
@@ -8191,6 +8435,20 @@ function App() {
   }
 
   const { posts, loading: newsLoading, fromApi, feedStatus } = useNews(1,'','');
+
+  const isMobileDevice = typeof window !== 'undefined' && window.innerWidth < 768;
+
+  if (isMobileDevice && page === 'home') {
+    return (
+      <>
+        <div className="toasts">
+          {toasts.map(t => <div key={t.id} className={`toast ${t.type}`}><span>{t.type==='ok'?'✅':'⚠️'}</span>{t.msg}</div>)}
+        </div>
+        <MobileSplashPage onNav={nav}/>
+        {authOpen && <AuthModal onClose={()=>setAuthOpen(false)} onLogin={setUser} addToast={addToast}/>}
+      </>
+    );
+  }
 
   return (
     <>
