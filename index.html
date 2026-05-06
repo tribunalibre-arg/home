@@ -103,6 +103,8 @@ window.__supabase = null;  // se inicializa cuando cargue el SDK
 // ═══════════════════════════════════════════════════════════
 // ── Cache version — cambiá el número si querés forzar re-fetch de noticias ──
 (function bustCache() {
+  // Deshabilitar scroll restoration del browser para que el scrollTo manual funcione siempre
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
   var CACHE_VERSION = 'v6';  // incrementado para limpiar caché de noticias
   var stored = localStorage.getItem('tl_cache_version');
   if (stored !== CACHE_VERSION) {
@@ -501,7 +503,9 @@ window.enrichArticlesWithImages = async function(posts, onUpdate) {
   --h:60px;
 }
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{background:var(--bg);color:var(--tx);font-family:var(--fw);min-height:100vh;-webkit-font-smoothing:antialiased}
+html,body{background:var(--bg);color:var(--tx);font-family:var(--fw);min-height:100vh;-webkit-font-smoothing:antialiased;scroll-behavior:auto}
+html{scroll-padding-top:calc(var(--h) + 14px)}
+body{padding-top:calc(var(--h) + 5px)}
 h1,h2,h3{font-family:var(--fd)}
 
 /* ── MOBILE HOME SECTIONS ─────────────────────── */
@@ -552,7 +556,7 @@ img{max-width:100%;height:auto;display:block}
 .usr-btn:hover .usr-nm{color:white}
 
 /* SHELL — FIX: columna central siempre visible con overflow correcto */
-.shell{display:flex;margin-top:calc(var(--h)+5px);min-height:calc(100vh - var(--h) - 5px)}
+.shell{display:flex;margin-top:0;min-height:calc(100vh - var(--h) - 5px)}
 .lnav{width:200px;flex-shrink:0;position:sticky;top:calc(var(--h)+5px);align-self:flex-start;background:var(--white);border-right:1px solid var(--br);padding:10px 0;display:none;flex-direction:column}
 @media(min-width:860px){.lnav{display:flex}}
 .ng{padding:0 8px;margin-bottom:5px}
@@ -570,8 +574,8 @@ img{max-width:100%;height:auto;display:block}
 .nl-live-c{font-size:10px;color:rgba(192,57,43,.5);margin-left:auto}
 
 /* MAIN — FIX: permite que la columna del medio se expanda correctamente */
-.main{flex:1;min-width:0;padding:18px 14px;overflow:visible}
-@media(min-width:860px){.main{padding:22px 20px}}
+.main{flex:1;min-width:0;padding:24px 14px;overflow:visible}
+@media(min-width:860px){.main{padding:28px 20px}}
 
 /* RIGHT SIDEBAR */
 .rsb{width:280px;flex-shrink:0;position:sticky;top:calc(var(--h)+5px);align-self:flex-start;padding:16px 13px;border-left:1px solid var(--br);background:var(--white);display:none;overflow-x:hidden}
@@ -8443,8 +8447,12 @@ function App() {
     }
   }, []);
 
-  function nav(p) { setPage(p); setArticle(null); window.scrollTo(0,0); }
-  function openArticle(p) { setArticle(p); setPage('article'); window.scrollTo(0,0); }
+  function nav(p) { setPage(p); setArticle(null); }
+  function openArticle(p) { setArticle(p); setPage('article'); }
+  useEffect(() => {
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0; // Safari fallback
+  }, [page, article]);
   function logout() {
     ls.del('tl_token');
     if (window.__supabase) window.__supabase.auth.signOut().catch(()=>{});
