@@ -6092,6 +6092,20 @@ function RedPeriodismoPage({ addToast }) {
   const nivel = getKarmaLevel(karma.pts);
   const progreso = getKarmaProgress(karma.pts);
   const nextNivel = KARMA_NIVELES[KARMA_NIVELES.indexOf(nivel)+1];
+  const [mediosSeguidos, setMediosSeguidos] = useState(()=>{
+    try{return JSON.parse(ls.get('red_medios')||'[]');}catch{return [];}
+  });
+  const [solicitudEnviada, setSolicitudEnviada] = useState(()=>ls.get('red_solicitud')==='1');
+
+  function toggleMedio(nombre){
+    setMediosSeguidos(prev=>{
+      const ya=prev.includes(nombre);
+      const nuevo=ya?prev.filter(x=>x!==nombre):[...prev,nombre];
+      ls.set('red_medios',JSON.stringify(nuevo));
+      addToast({msg:ya?`Dejaste de seguir ${nombre}`:`✓ Siguiendo ${nombre}`,type:'ok'});
+      return nuevo;
+    });
+  }
   return (
     <div>
       <div style={{background:'linear-gradient(135deg,#0891B2,#0E7490)',borderRadius:'var(--rl)',padding:'14px 18px',marginBottom:14,color:'white',display:'flex',alignItems:'center',gap:12}}>
@@ -6139,25 +6153,32 @@ function RedPeriodismoPage({ addToast }) {
       {tab==='medios' && (
         <div>
           {[
-            {em:'📺',n:'TyC Sports',t:'Canal deportivo líder en Argentina. Fútbol, rugby, tenis y más.',seg:'2.1M',url:'tycsports.com'},
-            {em:'📰',n:'Olé',t:'El diario deportivo más leído de Argentina. Cobertura total del fútbol.',seg:'1.8M',url:'ole.com.ar'},
-            {em:'🟠',n:'ESPN Argentina',t:'Señal internacional con cobertura de todos los deportes del mundo.',seg:'3.4M',url:'espn.com.ar'},
-            {em:'⚽',n:'Infobae Deportes',t:'Cobertura deportiva del portal de noticias más visitado del país.',seg:'4.2M',url:'infobae.com/deportes'},
-            {em:'📻',n:'Radio La Red',t:'La radio deportiva de referencia en Argentina. 24hs de fútbol.',seg:'890K',url:'lared.com.ar'},
-            {em:'🎙️',n:'TNT Sports',t:'Transmisiones exclusivas de Copa Libertadores y Champions League.',seg:'1.2M',url:'tntsports.com.ar'},
-          ].map((m,i)=>(
-            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',alignItems:'center',gap:12,cursor:'pointer',transition:'.2s'}}
-              onMouseEnter={e=>e.currentTarget.style.borderColor='var(--teal)'}
-              onMouseLeave={e=>e.currentTarget.style.borderColor='var(--br)'}>
-              <span style={{fontSize:26,flexShrink:0}}>{m.em}</span>
-              <div style={{flex:1}}>
-                <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:600,marginBottom:3}}>{m.n}</div>
-                <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.45,marginBottom:4}}>{m.t}</div>
-                <div style={{fontSize:10,color:'var(--tx3)'}}>{m.url} · {m.seg} lectores</div>
+            {em:'📺',n:'TyC Sports',t:'Canal deportivo líder en Argentina. Fútbol, rugby, tenis y más.',seg:'2.1M',url:'https://www.tycsports.com'},
+            {em:'📰',n:'Olé',t:'El diario deportivo más leído de Argentina. Cobertura total del fútbol.',seg:'1.8M',url:'https://www.ole.com.ar'},
+            {em:'🟠',n:'ESPN Argentina',t:'Señal internacional con cobertura de todos los deportes del mundo.',seg:'3.4M',url:'https://www.espn.com.ar'},
+            {em:'⚽',n:'Infobae Deportes',t:'Cobertura deportiva del portal de noticias más visitado del país.',seg:'4.2M',url:'https://www.infobae.com/deportes'},
+            {em:'📻',n:'Radio La Red',t:'La radio deportiva de referencia en Argentina. 24hs de fútbol.',seg:'890K',url:'https://www.lared.com.ar'},
+            {em:'🎙️',n:'TNT Sports',t:'Transmisiones exclusivas de Copa Libertadores y Champions League.',seg:'1.2M',url:'https://www.tntsports.com.ar'},
+          ].map((m,i)=>{
+            const siguiendo=mediosSeguidos.includes(m.n);
+            return (
+              <div key={i} className="card cp" style={{marginBottom:10,display:'flex',alignItems:'center',gap:12,cursor:'pointer',transition:'.2s'}}
+                onMouseEnter={e=>e.currentTarget.style.borderColor='var(--teal)'}
+                onMouseLeave={e=>e.currentTarget.style.borderColor='var(--br)'}
+                onClick={()=>window.open(m.url,'_blank')}>
+                <span style={{fontSize:26,flexShrink:0}}>{m.em}</span>
+                <div style={{flex:1}}>
+                  <div style={{fontFamily:'var(--fd)',fontSize:14,fontWeight:600,marginBottom:3}}>{m.n}</div>
+                  <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.45,marginBottom:4}}>{m.t}</div>
+                  <div style={{fontSize:10,color:'var(--tx3)'}}>{m.url.replace('https://www.','')} · {m.seg} lectores</div>
+                </div>
+                <button className="btn btn-sm" onClick={e=>{e.stopPropagation();toggleMedio(m.n);}}
+                  style={{flexShrink:0,background:siguiendo?'var(--teal)':'transparent',color:siguiendo?'white':'var(--teal)',border:'1.5px solid var(--teal)',borderRadius:20,padding:'5px 11px',fontSize:11,fontWeight:700,cursor:'pointer',transition:'.15s'}}>
+                  {siguiendo?'✓ Siguiendo':'+'}
+                </button>
               </div>
-              <button className="btn btn-t btn-sm" onClick={()=>addToast({msg:`Siguiendo ${m.n} ✓`,type:'ok'})}>+</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {tab==='periodismo' && <PeriodismoDeportivoSubTab addToast={addToast}/>}
@@ -6175,9 +6196,19 @@ function RedPeriodismoPage({ addToast }) {
                 <span style={{fontSize:13,color:'var(--tx2)'}}>{b}</span>
               </div>
             ))}
-            <button className="btn btn-t" style={{marginTop:14}} onClick={()=>{addToast({msg:'¡Solicitud enviada! Te contactamos pronto 🎉',type:'ok'});sumar('unirse',20);}}>
-              <Ic.Net style={{width:14,height:14}}/> Solicitar acceso
-            </button>
+            {solicitudEnviada
+              ? <div style={{marginTop:16,padding:'11px 14px',background:'rgba(8,145,178,.12)',border:'1.5px solid var(--teal)',borderRadius:'var(--r)',fontSize:13,color:'var(--teal)',fontWeight:600,display:'flex',alignItems:'center',gap:8}}>
+                  <Ic.Check style={{width:16,height:16}}/> ¡Solicitud enviada! El equipo te contactará pronto.
+                </div>
+              : <button className="btn btn-t" style={{marginTop:14}} onClick={()=>{
+                  ls.set('red_solicitud','1');
+                  setSolicitudEnviada(true);
+                  sumar('unirse',20);
+                  addToast({msg:'¡Solicitud enviada! Te contactamos pronto 🎉 +20 karma',type:'ok'});
+                }}>
+                  <Ic.Net style={{width:14,height:14}}/> Solicitar acceso
+                </button>
+            }
           </div>
         </div>
       )}
@@ -6190,31 +6221,51 @@ function RedFeedTab({notas, addToast, sumar}){
   const [items, setItems] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [filtro, setFiltro] = useState('Todos');
+  const [notaAbierta, setNotaAbierta] = useState(null);
   const sb = window.__supabase;
   const formatos = ['Todos','Nota','Entrevista','Video','Columna','Fotografía','Podcast'];
   const emMap = {Nota:'📰',Entrevista:'🎤',Video:'📹',Columna:'✍️',Fotografía:'📸',Podcast:'🎙️'};
+
   useEffect(()=>{
     async function cargar(){
       setCargando(true);
+      // Cargar likes persistidos
+      let likesGuardados = {};
+      try{ likesGuardados = JSON.parse(ls.get('red_likes')||'{}'); }catch{}
       if(sb){
         try{
           const {data,error} = await sb.from('red_notas').select('*').order('created_at',{ascending:false}).limit(30);
           if(!error && data && data.length>0){
-            setItems(data.map(n=>({id:n.id,formato:n.formato,em:emMap[n.formato]||'📰',deporte:n.deporte,titulo:n.titulo,resumen:n.resumen,autor:n.autor,autorEm:'✍️',fecha:new Date(n.created_at).toLocaleDateString('es-AR'),lecturas:n.lecturas||0,likes:n.likes||0,verificado:false})));
+            setItems(data.map(n=>({id:n.id,formato:n.formato,em:emMap[n.formato]||'📰',deporte:n.deporte,titulo:n.titulo,resumen:n.resumen,autor:n.autor,autorEm:'✍️',fecha:new Date(n.created_at).toLocaleDateString('es-AR'),lecturas:n.lecturas||0,likes:(n.likes||0)+(likesGuardados[n.id]||0),likedByMe:!!(likesGuardados[n.id]),verificado:false})));
             setCargando(false);return;
           }
         }catch(e){console.warn('RED feed:',e.message);}
       }
-      setItems(notas);setCargando(false);
+      setItems(notas.map(n=>({...n,likes:(n.likes||0)+(likesGuardados[n.id]||0),likedByMe:!!(likesGuardados[n.id])})));
+      setCargando(false);
     }
     cargar();
   },[]);
+
   const filtrados = filtro==='Todos'?items:items.filter(n=>n.formato===filtro);
+
   function like(id){
-    setItems(it=>it.map(n=>n.id===id?{...n,likes:(n.likes||0)+1}:n));
-    sumar('like',1);
-    addToast({msg:'👍 +1 karma',type:'ok'});
+    setItems(it=>it.map(n=>{
+      if(n.id!==id) return n;
+      if(n.likedByMe){ // unlike
+        const nuevo = {...n, likes:Math.max(0,(n.likes||1)-1), likedByMe:false};
+        try{ const l=JSON.parse(ls.get('red_likes')||'{}'); delete l[id]; ls.set('red_likes',JSON.stringify(l)); }catch{}
+        return nuevo;
+      } else { // like
+        const nuevo = {...n, likes:(n.likes||0)+1, likedByMe:true};
+        try{ const l=JSON.parse(ls.get('red_likes')||'{}'); l[id]=1; ls.set('red_likes',JSON.stringify(l)); }catch{}
+        sumar('like',1);
+        addToast({msg:'👍 +1 karma',type:'ok'});
+        return nuevo;
+      }
+    }));
   }
+
   return (
     <div>
       <div style={{display:'flex',gap:6,overflowX:'auto',marginBottom:14,scrollbarWidth:'none',paddingBottom:4}}>
@@ -6226,7 +6277,7 @@ function RedFeedTab({notas, addToast, sumar}){
         ))}
       </div>
       {filtrados.map(n=>(
-        <div key={n.id} className="nota-card">
+        <div key={n.id} className="nota-card" style={{cursor:'pointer'}} onClick={()=>setNotaAbierta(n)}>
           <div className="nota-format-badge">{n.em} {n.formato} · {n.deporte}</div>
           <div className="nota-title">{n.titulo}</div>
           <div className="nota-excerpt">{n.resumen}</div>
@@ -6236,12 +6287,37 @@ function RedFeedTab({notas, addToast, sumar}){
             {n.verificado&&<span>✅</span>}
             <span>·</span><span>{n.fecha}</span>
             <span>·</span><Ic.Eye style={{width:10,height:10}}/><span>{n.lecturas.toLocaleString()}</span>
-            <div className="nota-likes" onClick={()=>like(n.id)}>
-              <Ic.Heart style={{width:11,height:11}}/><span>{n.likes}</span>
+            <div className="nota-likes" style={{marginLeft:'auto',color:n.likedByMe?'var(--red)':'var(--tx3)',fontWeight:n.likedByMe?700:400}}
+              onClick={e=>{e.stopPropagation();like(n.id);}}>
+              <Ic.Heart style={{width:11,height:11,fill:n.likedByMe?'var(--red)':'none',stroke:n.likedByMe?'var(--red)':'currentColor'}}/><span>{n.likes}</span>
             </div>
           </div>
         </div>
       ))}
+      {/* Modal nota completa */}
+      {notaAbierta && (
+        <div className="mbg" onClick={()=>setNotaAbierta(null)}>
+          <div className="mdl" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
+            <div className="mdl-h">
+              <div className="mdl-t" style={{fontSize:13}}>{notaAbierta.em} {notaAbierta.formato} · {notaAbierta.deporte}</div>
+              <button className="cls" onClick={()=>setNotaAbierta(null)}><Ic.X/></button>
+            </div>
+            <div style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:700,lineHeight:1.3,marginBottom:10,color:'var(--tx)'}}>{notaAbierta.titulo}</div>
+            <div style={{fontSize:12,color:'var(--tx3)',marginBottom:14,display:'flex',gap:10,flexWrap:'wrap'}}>
+              <span>✍️ {notaAbierta.autor}</span><span>·</span><span>📅 {notaAbierta.fecha}</span><span>·</span>
+              <span style={{display:'flex',alignItems:'center',gap:3}}><Ic.Eye style={{width:10,height:10}}/>{notaAbierta.lecturas.toLocaleString()} lecturas</span>
+            </div>
+            <div style={{fontSize:14,color:'var(--tx2)',lineHeight:1.7,marginBottom:18}}>{notaAbierta.resumen}</div>
+            <div style={{display:'flex',gap:8,alignItems:'center'}}>
+              <button className="btn btn-sm" style={{flex:1,justifyContent:'center',background:notaAbierta.likedByMe?'var(--red)':'transparent',color:notaAbierta.likedByMe?'white':'var(--tx2)',border:'1.5px solid var(--br)',borderRadius:20,padding:'7px 12px',fontSize:12,cursor:'pointer'}}
+                onClick={()=>{like(notaAbierta.id);setNotaAbierta(n=>n?{...n,likes:n.likedByMe?n.likes-1:n.likes+1,likedByMe:!n.likedByMe}:n);}}>
+                ❤️ {notaAbierta.likedByMe?'Ya me gustó':'Me gusta'}
+              </button>
+              <button className="btn btn-o btn-sm" style={{flex:1,justifyContent:'center'}} onClick={()=>setNotaAbierta(null)}>Cerrar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6317,7 +6393,12 @@ function RedColaboracionesTab({addToast, sumar}){
   const [items, setItems] = useState(RED_COLABORACIONES_INIT);
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({rol:'Camarógrafo',titulo:'',desc:'',urgencia:'media'});
+  const [contactando, setContactando] = useState(null); // {colabId, msg}
+  const [contactados, setContactados] = useState(()=>{
+    try{return JSON.parse(ls.get('red_contactados')||'[]');}catch{return [];}
+  });
   const roles = ['Camarógrafo','Reportero','Fotógrafo','Productor','Co-autor','Asistente','Editor de video','Community Manager'];
+
   function publicarColab(){
     if(!form.titulo.trim()||!form.desc.trim()){addToast({msg:'Completá título y descripción',type:'err'});return;}
     const nueva={id:Date.now(),rol:form.rol,em:'🤝',titulo:form.titulo,desc:form.desc,tags:[form.rol],urgencia:form.urgencia,autor:'Vos',fecha:'ahora'};
@@ -6327,6 +6408,17 @@ function RedColaboracionesTab({addToast, sumar}){
     sumar('colaboracion',8);
     addToast({msg:'¡Búsqueda publicada! +8 karma 🤝',type:'ok'});
   }
+
+  function enviarMensaje(){
+    if(!contactando?.msg?.trim()){addToast({msg:'Escribí un mensaje primero',type:'err'});return;}
+    const nuevos = [...contactados, contactando.colabId];
+    setContactados(nuevos);
+    ls.set('red_contactados', JSON.stringify(nuevos));
+    addToast({msg:`✓ Mensaje enviado a @${contactando.autor} — te responderán pronto`,type:'ok'});
+    sumar('contactar',3);
+    setContactando(null);
+  }
+
   const urgLabel={alta:'Urgente',media:'Esta semana',baja:'Sin urgencia'};
   const urgClass={alta:'urg-alta',media:'urg-media',baja:'urg-baja'};
   return (
@@ -6367,10 +6459,41 @@ function RedColaboracionesTab({addToast, sumar}){
           <div className="colab-tags">{c.tags.map((t,i)=><span key={i} className="colab-tag">{t}</span>)}</div>
           <div className="colab-footer">
             <span>@{c.autor.replace(' ','_')}</span><span>·</span><span>{c.fecha}</span>
-            <button className="btn btn-t btn-sm" style={{marginLeft:'auto'}} onClick={()=>{addToast({msg:`Mensaje enviado a @${c.autor.replace(' ','_')} ✓`,type:'ok'});sumar('contactar',3);}}>Contactar</button>
+            {contactados.includes(c.id)
+              ? <span style={{marginLeft:'auto',fontSize:11,color:'var(--green)',fontWeight:700}}>✓ Mensaje enviado</span>
+              : <button className="btn btn-t btn-sm" style={{marginLeft:'auto'}}
+                  onClick={()=>setContactando({colabId:c.id,autor:c.autor,titulo:c.titulo,msg:''})}>
+                  Contactar
+                </button>
+            }
           </div>
         </div>
       ))}
+      {/* Modal contactar */}
+      {contactando && (
+        <div className="mbg" onClick={()=>setContactando(null)}>
+          <div className="mdl" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+            <div className="mdl-h">
+              <div className="mdl-t">💬 Contactar a @{contactando.autor.replace(' ','_')}</div>
+              <button className="cls" onClick={()=>setContactando(null)}><Ic.X/></button>
+            </div>
+            <div style={{fontSize:12,color:'var(--tx2)',marginBottom:12,padding:'8px 12px',background:'var(--cel-xl)',borderRadius:'var(--rs)',lineHeight:1.5}}>
+              📋 Búsqueda: <b>{contactando.titulo}</b>
+            </div>
+            <div style={{marginBottom:14}}>
+              <label className="fl">Tu mensaje</label>
+              <textarea className="fi" value={contactando.msg}
+                onChange={e=>setContactando(c=>({...c,msg:e.target.value}))}
+                placeholder="Hola, me interesa tu búsqueda. Tengo experiencia en..."
+                style={{minHeight:90,resize:'vertical'}}/>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-o btn-sm" style={{flex:1,justifyContent:'center'}} onClick={()=>setContactando(null)}>Cancelar</button>
+              <button className="btn btn-t btn-sm" style={{flex:1,justifyContent:'center'}} onClick={enviarMensaje}>Enviar mensaje 📨</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -6378,6 +6501,8 @@ function RedColaboracionesTab({addToast, sumar}){
 /* ══════ RED RANKING TAB ══════ */
 function RedRankingTab({karma, nivel}){
   const ranking = RED_RANKING_INIT;
+  // Calcular posición real del usuario en el ranking
+  const posicion = ranking.filter(p=>p.pts>karma.pts).length + 1;
   return (
     <div>
       <div className="sh"><div className="st">🏆 Ranking semanal</div><span style={{fontSize:11,color:'var(--tx3)'}}>Semana actual</span></div>
@@ -6395,13 +6520,17 @@ function RedRankingTab({karma, nivel}){
       ))}
       <div className="sh" style={{marginTop:18}}><div className="st">📊 Tu posición</div></div>
       <div className="red-rank-card" style={{border:'2px solid var(--teal)'}}>
-        <span className="red-rank-num">—</span>
+        <span className="red-rank-num" style={{color:'var(--teal)',fontWeight:800}}>#{posicion}</span>
         <div className="red-rank-av" style={{background:'rgba(8,145,178,.15)',fontSize:14}}>👤</div>
         <div className="red-rank-info">
           <div className="red-rank-name">Tu perfil</div>
           <div className="red-rank-level">{nivel.nombre}</div>
+          {karma.pts > 0
+            ? <div style={{fontSize:10,color:'var(--teal)',marginTop:2}}>+{karma.pts} pts acumulados</div>
+            : <div style={{fontSize:10,color:'var(--tx3)',marginTop:2}}>Publicá contenido para sumar karma</div>
+          }
         </div>
-        <span className="red-rank-pts">{karma.pts} pts</span>
+        <span className="red-rank-pts" style={{color:'var(--teal)'}}>{karma.pts} pts</span>
       </div>
       <div className="sh" style={{marginTop:18}}><div className="st">📋 Actividad reciente</div></div>
       <div className="card cp">
@@ -6420,28 +6549,77 @@ function RedRankingTab({karma, nivel}){
 /* ══════ RED PERIODISTAS TAB ══════ */
 function RedPeriodistasTab({addToast}){
   const [search, setSearch] = useState('');
+  const [seguidos, setSeguidos] = useState(()=>{
+    try{return JSON.parse(ls.get('red_seguidos')||'[]');}catch{return [];}
+  });
+  const [perfil, setPerfil] = useState(null);
   const filtered = RED_PERIODISMO.filter(p=>!search||p.nombre.toLowerCase().includes(search.toLowerCase())||p.rol.toLowerCase().includes(search.toLowerCase()));
+
+  function toggleSeguir(p){
+    setSeguidos(prev=>{
+      const ya = prev.includes(p.id);
+      const nuevo = ya ? prev.filter(x=>x!==p.id) : [...prev,p.id];
+      ls.set('red_seguidos', JSON.stringify(nuevo));
+      addToast({msg: ya ? `Dejaste de seguir a ${p.nombre}` : `✓ Siguiendo a ${p.nombre}`, type:'ok'});
+      return nuevo;
+    });
+  }
+
   return (
     <div>
       <input className="fi" value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar periodistas..." style={{marginBottom:14}}/>
-      {filtered.map(p=>(
-        <div key={p.id} className="red-card">
-          <div className="red-avatar" style={{background:'rgba(8,145,178,.1)'}}>{p.em}</div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
-              <div className="red-name">{p.nombre}</div>
-              {p.verificado&&<span style={{fontSize:14}}>✅</span>}
+      {filtered.map(p=>{
+        const siguiendo = seguidos.includes(p.id);
+        return (
+          <div key={p.id} className="red-card" style={{cursor:'pointer'}} onClick={()=>setPerfil(p)}>
+            <div className="red-avatar" style={{background:'rgba(8,145,178,.1)'}}>{p.em}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginBottom:2}}>
+                <div className="red-name">{p.nombre}</div>
+                {p.verificado&&<span style={{fontSize:14}}>✅</span>}
+              </div>
+              <div className="red-role">{p.rol} · {p.medio}</div>
+              <div className="red-bio">{p.bio}</div>
+              <div className="red-stats">
+                <span className="red-stat"><Ic.Pen style={{width:10,height:10}}/>{p.notas} notas</span>
+                <span className="red-stat"><Ic.Com style={{width:10,height:10}}/>{(p.seguidores+(siguiendo?1:0)).toLocaleString()} seguidores</span>
+              </div>
             </div>
-            <div className="red-role">{p.rol} · {p.medio}</div>
-            <div className="red-bio">{p.bio}</div>
-            <div className="red-stats">
-              <span className="red-stat"><Ic.Pen style={{width:10,height:10}}/>{p.notas} notas</span>
-              <span className="red-stat"><Ic.Com style={{width:10,height:10}}/>{p.seguidores.toLocaleString()} seguidores</span>
+            <button className="btn btn-sm" onClick={e=>{e.stopPropagation();toggleSeguir(p);}}
+              style={{flexShrink:0,background:siguiendo?'var(--teal)':'transparent',color:siguiendo?'white':'var(--teal)',border:'1.5px solid var(--teal)',borderRadius:20,padding:'5px 12px',fontSize:11,fontWeight:700,cursor:'pointer',transition:'.15s'}}>
+              {siguiendo?'✓ Siguiendo':'Seguir'}
+            </button>
+          </div>
+        );
+      })}
+      {/* Modal perfil */}
+      {perfil && (
+        <div className="mbg" onClick={()=>setPerfil(null)}>
+          <div className="mdl" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+            <div className="mdl-h">
+              <div className="mdl-t">{perfil.em} {perfil.nombre}</div>
+              <button className="cls" onClick={()=>setPerfil(null)}><Ic.X/></button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',alignItems:'center',padding:'18px 0 10px',gap:6}}>
+              <div style={{width:60,height:60,borderRadius:'50%',background:'rgba(8,145,178,.15)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:28}}>{perfil.em}</div>
+              <div style={{fontFamily:'var(--fd)',fontSize:17,fontWeight:700,display:'flex',alignItems:'center',gap:6}}>{perfil.nombre}{perfil.verificado&&<span>✅</span>}</div>
+              <div style={{fontSize:12,color:'var(--teal)',fontWeight:600}}>{perfil.rol} · {perfil.medio}</div>
+            </div>
+            <div style={{fontSize:13,color:'var(--tx2)',lineHeight:1.65,marginBottom:16,padding:'0 4px'}}>{perfil.bio}</div>
+            <div style={{display:'flex',gap:16,justifyContent:'center',marginBottom:18}}>
+              <div style={{textAlign:'center'}}><div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,color:'var(--teal)'}}>{perfil.notas}</div><div style={{fontSize:10,color:'var(--tx3)'}}>notas</div></div>
+              <div style={{textAlign:'center'}}><div style={{fontFamily:'var(--fd)',fontSize:18,fontWeight:700,color:'var(--teal)'}}>{perfil.seguidores.toLocaleString()}</div><div style={{fontSize:10,color:'var(--tx3)'}}>seguidores</div></div>
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <button className="btn btn-o btn-sm" style={{flex:1,justifyContent:'center'}} onClick={()=>setPerfil(null)}>Cerrar</button>
+              <button className="btn btn-sm" onClick={()=>{toggleSeguir(perfil);setPerfil(null);}}
+                style={{flex:1,justifyContent:'center',background:seguidos.includes(perfil.id)?'#e5f6f6':'var(--teal)',color:seguidos.includes(perfil.id)?'var(--teal)':'white',border:'1.5px solid var(--teal)',borderRadius:20,padding:'7px 12px',fontSize:12,fontWeight:700,cursor:'pointer'}}>
+                {seguidos.includes(perfil.id)?'Dejar de seguir':'Seguir'}
+              </button>
             </div>
           </div>
-          <button className="btn btn-t btn-sm" onClick={()=>addToast({msg:`Siguiendo a ${p.nombre} ✓`,type:'ok'})}>Seguir</button>
         </div>
-      ))}
+      )}
     </div>
   );
 }
@@ -6499,7 +6677,10 @@ function RedKarmaTab({karma, nivel, progreso, nextNivel, sumar, addToast}){
 function PeriodismoDeportivoSubTab({ addToast }) {
   const [tab, setTab] = useState('articulos');
   const [showForm, setShowForm] = useState(false);
+  // Estado del tab publicar (independiente del modal)
   const [nota, setNota] = useState({titulo:'',resumen:'',autor:'',cat:'Coberturas'});
+  // Estado del modal (separado para no pisar el tab)
+  const [notaModal, setNotaModal] = useState({titulo:'',resumen:'',autor:'',cat:'Coberturas'});
   const [userNotas, setUserNotas] = useState([]);
   const [chatMsg, setChatMsg] = useState('');
   const [chatMsgs, setChatMsgs] = useState([
@@ -6507,12 +6688,37 @@ function PeriodismoDeportivoSubTab({ addToast }) {
     {id:2,u:'LucasMiró',text:'Excelente análisis táctico del partido',own:false},
   ]);
   const chatRef = useRef();
+
+  // Auto-respuestas simuladas del chat
+  const autoRespuestas = [
+    '¡Buen punto! La cobertura en campo hace toda la diferencia 🎙️',
+    'Totalmente de acuerdo. El periodismo deportivo argentino está en su mejor momento 🇦🇷',
+    'Eso mismo le decía yo. Los datos respaldan todo, hay que usarlos más en la narrativa 📊',
+    '¿Viste el análisis de Demichelis del otro día? Muy bueno para entender el juego posicional ⚽',
+    'La narrativa visual es clave hoy. Sin un buen video corto, la nota no viaja en redes 📹',
+    '¡Exacto! Por eso desde la Red buscamos colaborar y no competir entre periodistas 🤝',
+  ];
+  const autoUsers = ['Martina_S','LucasMiró','Rodrigo_P','ValeriaCruz','EmanuelR','SofíaB'];
+
   function sendChat() {
     if (!chatMsg.trim()) return;
-    setChatMsgs(m => [...m,{id:Date.now(),u:'Vos',text:chatMsg,own:true}]);
+    const myMsg = {id:Date.now(),u:'Vos',text:chatMsg,own:true};
+    setChatMsgs(m => [...m, myMsg]);
     setChatMsg('');
     setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    // Auto-respuesta simulada
+    setTimeout(()=>{
+      const resp = {
+        id:Date.now()+1,
+        u:autoUsers[Math.floor(Math.random()*autoUsers.length)],
+        text:autoRespuestas[Math.floor(Math.random()*autoRespuestas.length)],
+        own:false
+      };
+      setChatMsgs(m=>[...m,resp]);
+      setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    }, 1200 + Math.random()*800);
   }
+
   useEffect(()=>{
     async function cargarPeri(){
       const sb=window.__supabase;
@@ -6527,17 +6733,17 @@ function PeriodismoDeportivoSubTab({ addToast }) {
     cargarPeri();
   },[]);
 
-  async function submitNota(e) {
-    if (e && e.preventDefault) e.preventDefault();
-    if (!nota.titulo.trim() || !nota.resumen.trim()) { addToast({msg:'Completá título y resumen',type:'err'}); return; }
+  async function submitNota(fromModal) {
+    const n = fromModal ? notaModal : nota;
+    if (!n.titulo.trim() || !n.resumen.trim()) { addToast({msg:'Completá título y resumen',type:'err'}); return; }
     const sb=window.__supabase;
-    const nueva = {id:Date.now(),emoji:'✍️',cat:nota.cat,titulo:nota.titulo,resumen:nota.resumen,autor:nota.autor||'Colaborador',fecha:new Date().toLocaleDateString('es-AR'),lecturas:0};
+    const nueva = {id:Date.now(),emoji:'✍️',cat:n.cat,titulo:n.titulo,resumen:n.resumen,autor:n.autor||'Colaborador',fecha:new Date().toLocaleDateString('es-AR'),lecturas:0};
     if(sb){
       try{
         const {data:sess}=await sb.auth.getSession();
         const uid=sess?.session?.user?.id;
-        const autorFinal=nota.autor.trim()||sess?.session?.user?.user_metadata?.full_name||'Colaborador';
-        const {data,error}=await sb.from('peri_articulos').insert({user_id:uid||null,autor:autorFinal,categoria:nota.cat,titulo:nota.titulo,resumen:nota.resumen}).select().single();
+        const autorFinal=n.autor.trim()||sess?.session?.user?.user_metadata?.full_name||'Colaborador';
+        const {data,error}=await sb.from('peri_articulos').insert({user_id:uid||null,autor:autorFinal,categoria:n.cat,titulo:n.titulo,resumen:n.resumen}).select().single();
         if(error) throw error;
         nueva.id=data.id;
         nueva.autor=autorFinal;
@@ -6546,9 +6752,9 @@ function PeriodismoDeportivoSubTab({ addToast }) {
     } else {
       addToast({msg:'¡Publicado localmente! Conectá Supabase para que todos la vean 🎉',type:'ok'});
     }
-    setUserNotas(n => [nueva,...n]);
-    setNota({titulo:'',resumen:'',autor:'',cat:'Coberturas'});
-    setShowForm(false);
+    setUserNotas(prev => [nueva,...prev]);
+    if(fromModal){ setNotaModal({titulo:'',resumen:'',autor:'',cat:'Coberturas'}); setShowForm(false); }
+    else { setNota({titulo:'',resumen:'',autor:'',cat:'Coberturas'}); }
   }
   return (
     <div>
@@ -6558,7 +6764,7 @@ function PeriodismoDeportivoSubTab({ addToast }) {
           <div style={{fontFamily:'var(--fd)',fontSize:16,fontWeight:700}}>Periodismo Deportivo</div>
           <div style={{fontSize:11,opacity:.8}}>Recursos, técnicas y comunidad para periodistas</div>
         </div>
-        <button className="btn btn-sm" style={{background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.4)',color:'white',borderRadius:30,flexShrink:0}} onClick={()=>setShowForm(true)}>
+        <button className="btn btn-sm" style={{background:'rgba(255,255,255,.2)',border:'1.5px solid rgba(255,255,255,.4)',color:'white',borderRadius:30,flexShrink:0}} onClick={()=>{setShowForm(true);setTab('articulos');}}>
           <Ic.Pen style={{width:12,height:12}}/> Publicar columna
         </button>
       </div>
@@ -6615,7 +6821,7 @@ function PeriodismoDeportivoSubTab({ addToast }) {
           <div style={{marginBottom:10}}><label className="fl">Título de tu columna</label><input className="fi" value={nota.titulo} onChange={e=>setNota(n=>({...n,titulo:e.target.value}))} placeholder="El título más llamativo"/></div>
           <div style={{marginBottom:10}}><label className="fl">Tu nombre o seudónimo (opcional)</label><input className="fi" value={nota.autor} onChange={e=>setNota(n=>({...n,autor:e.target.value}))} placeholder="@mi_usuario"/></div>
           <div style={{marginBottom:16}}><label className="fl">Contenido / Resumen</label><textarea className="fi" value={nota.resumen} onChange={e=>setNota(n=>({...n,resumen:e.target.value}))} placeholder="Escribí tu nota aquí..." style={{minHeight:110,resize:'vertical'}}/></div>
-          <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'10px'}} onClick={submitNota}>
+          <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'10px'}} onClick={()=>submitNota(false)}>
             <Ic.Pen style={{width:13,height:13}}/> Publicar mi columna 🚀
           </button>
         </div>
@@ -6667,14 +6873,15 @@ function PeriodismoDeportivoSubTab({ addToast }) {
       {tab==='recursos' && (
         <div>
           {[
-            {em:'🎬',t:'CapCut / DaVinci Resolve',d:'Edición de video gratuita para móvil y desktop. Ideal para Reels y documentales cortos.',tipo:'Video',gratis:true},
-            {em:'📊',t:'FBref / SofaScore',d:'Estadísticas avanzadas de fútbol, rugby y básquet. Datos en tiempo real.',tipo:'Datos',gratis:true},
-            {em:'🎨',t:'Canva Pro (plan gratuito)',d:'Diseño de gráficas, infografías y contenido para redes. Templates deportivos.',tipo:'Diseño',gratis:true},
-            {em:'🎙️',t:'Audacity',d:'Grabación y edición de audio profesional. Ideal para podcasts y radio.',tipo:'Audio',gratis:true},
-            {em:'📝',t:'Notion',d:'Organización de notas, fuentes y coberturas. Trabajo colaborativo.',tipo:'Organización',gratis:true},
-            {em:'📡',t:'RSS Reader + rss2json',d:'Seguí feeds de medios deportivos y convertílos a JSON para tus proyectos.',tipo:'RSS',gratis:true},
+            {em:'🎬',t:'CapCut / DaVinci Resolve',d:'Edición de video gratuita para móvil y desktop. Ideal para Reels y documentales cortos.',tipo:'Video',gratis:true,url:'https://www.capcut.com/es-es/'},
+            {em:'📊',t:'FBref / SofaScore',d:'Estadísticas avanzadas de fútbol, rugby y básquet. Datos en tiempo real.',tipo:'Datos',gratis:true,url:'https://fbref.com'},
+            {em:'🎨',t:'Canva Pro (plan gratuito)',d:'Diseño de gráficas, infografías y contenido para redes. Templates deportivos.',tipo:'Diseño',gratis:true,url:'https://www.canva.com'},
+            {em:'🎙️',t:'Audacity',d:'Grabación y edición de audio profesional. Ideal para podcasts y radio.',tipo:'Audio',gratis:true,url:'https://www.audacityteam.org'},
+            {em:'📝',t:'Notion',d:'Organización de notas, fuentes y coberturas. Trabajo colaborativo.',tipo:'Organización',gratis:true,url:'https://www.notion.so'},
+            {em:'📡',t:'RSS Reader + rss2json',d:'Seguí feeds de medios deportivos y convertílos a JSON para tus proyectos.',tipo:'RSS',gratis:true,url:'https://rss2json.com'},
           ].map((r,i) => (
-            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',gap:12,cursor:'pointer'}}
+            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',gap:12,cursor:'pointer',transition:'.2s'}}
+              onClick={()=>window.open(r.url,'_blank')}
               onMouseEnter={e=>e.currentTarget.style.borderColor='var(--purple)'}
               onMouseLeave={e=>e.currentTarget.style.borderColor='var(--br)'}>
               <span style={{fontSize:24,flexShrink:0}}>{r.em}</span>
@@ -6685,6 +6892,7 @@ function PeriodismoDeportivoSubTab({ addToast }) {
                   <span className="badge bv-b">{r.tipo}</span>
                 </div>
                 <div style={{fontSize:11,color:'var(--tx2)',lineHeight:1.55}}>{r.d}</div>
+                <div style={{fontSize:10,color:'var(--purple)',marginTop:4,fontWeight:600}}>↗ Abrir recurso</div>
               </div>
             </div>
           ))}
@@ -6694,12 +6902,12 @@ function PeriodismoDeportivoSubTab({ addToast }) {
       {tab==='cursos' && (
         <div>
           {[
-            {em:'🏆',t:'Periodismo Deportivo Digital',org:'FOPEA',dur:'8 semanas',nivel:'Intermedio',gratis:false,precio:'$8.500'},
-            {em:'📱',t:'Redes Sociales para Periodistas',org:'TEA Imagen',dur:'4 semanas',nivel:'Principiante',gratis:true,precio:'Gratis'},
-            {em:'🎙️',t:'Radio y Podcast Deportivo',org:'ETER',dur:'6 meses',nivel:'Avanzado',gratis:false,precio:'$15.000'},
-            {em:'📸',t:'Fotoperiodismo Deportivo',org:'Fundación Avon',dur:'3 meses',nivel:'Principiante',gratis:true,precio:'Gratis'},
+            {em:'🏆',t:'Periodismo Deportivo Digital',org:'FOPEA',dur:'8 semanas',nivel:'Intermedio',gratis:false,precio:'$8.500',url:'https://www.fopea.org'},
+            {em:'📱',t:'Redes Sociales para Periodistas',org:'TEA Imagen',dur:'4 semanas',nivel:'Principiante',gratis:true,precio:'Gratis',url:'https://www.teaimagen.com.ar'},
+            {em:'🎙️',t:'Radio y Podcast Deportivo',org:'ETER',dur:'6 meses',nivel:'Avanzado',gratis:false,precio:'$15.000',url:'https://www.eter.com.ar'},
+            {em:'📸',t:'Fotoperiodismo Deportivo',org:'Fundación Avon',dur:'3 meses',nivel:'Principiante',gratis:true,precio:'Gratis',url:'https://www.fundacionavon.org.ar'},
           ].map((c,i) => (
-            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',gap:12,cursor:'pointer'}}
+            <div key={i} className="card cp" style={{marginBottom:10,display:'flex',gap:12,cursor:'pointer',transition:'.2s'}}
               onMouseEnter={e=>e.currentTarget.style.borderColor='var(--purple)'}
               onMouseLeave={e=>e.currentTarget.style.borderColor='var(--br)'}>
               <span style={{fontSize:28,flexShrink:0}}>{c.em}</span>
@@ -6708,7 +6916,10 @@ function PeriodismoDeportivoSubTab({ addToast }) {
                 <div style={{fontSize:11,color:'var(--tx2)',marginBottom:6}}>{c.org} · {c.dur} · {c.nivel}</div>
                 <div style={{display:'flex',alignItems:'center',gap:7}}>
                   <span className={`badge ${c.gratis?'bg-b':'bc'}`}>{c.precio}</span>
-                  <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',padding:'4px 10px'}} onClick={()=>addToast({msg:`Info enviada sobre: ${c.t}`,type:'ok'})}>Info</button>
+                  <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',padding:'4px 10px'}}
+                    onClick={e=>{e.stopPropagation();window.open(c.url,'_blank');addToast({msg:`Abriendo info de: ${c.t}`,type:'ok'});}}>
+                    Info ↗
+                  </button>
                 </div>
               </div>
             </div>
@@ -6722,14 +6933,14 @@ function PeriodismoDeportivoSubTab({ addToast }) {
           <div className="mdl" onClick={e=>e.stopPropagation()}>
             <div className="mdl-h"><div className="mdl-t" style={{color:'var(--purple)'}}>🎙️ Publicar columna</div><button className="cls" onClick={()=>setShowForm(false)}><Ic.X/></button></div>
             <div style={{marginBottom:10}}><label className="fl">Categoría</label>
-              <select className="fi" style={{background:'var(--cel-xl)'}} value={nota.cat} onChange={e=>setNota(n=>({...n,cat:e.target.value}))}>
+              <select className="fi" style={{background:'var(--cel-xl)'}} value={notaModal.cat} onChange={e=>setNotaModal(n=>({...n,cat:e.target.value}))}>
                 {['Coberturas','Entrevistas','Datos','Fotografía','Digital','Video','Opinión','Crónica'].map(s=><option key={s}>{s}</option>)}
               </select>
             </div>
-            <div style={{marginBottom:10}}><label className="fl">Título</label><input className="fi" value={nota.titulo} onChange={e=>setNota(n=>({...n,titulo:e.target.value}))} placeholder="El título más llamativo"/></div>
-            <div style={{marginBottom:10}}><label className="fl">Tu nombre (opcional)</label><input className="fi" value={nota.autor} onChange={e=>setNota(n=>({...n,autor:e.target.value}))} placeholder="@mi_usuario"/></div>
-            <div style={{marginBottom:16}}><label className="fl">Contenido</label><textarea className="fi" value={nota.resumen} onChange={e=>setNota(n=>({...n,resumen:e.target.value}))} placeholder="Escribí tu nota..." style={{minHeight:90,resize:'vertical'}}/></div>
-            <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'10px'}} onClick={submitNota}>Publicar 🚀</button>
+            <div style={{marginBottom:10}}><label className="fl">Título</label><input className="fi" value={notaModal.titulo} onChange={e=>setNotaModal(n=>({...n,titulo:e.target.value}))} placeholder="El título más llamativo"/></div>
+            <div style={{marginBottom:10}}><label className="fl">Tu nombre (opcional)</label><input className="fi" value={notaModal.autor} onChange={e=>setNotaModal(n=>({...n,autor:e.target.value}))} placeholder="@mi_usuario"/></div>
+            <div style={{marginBottom:16}}><label className="fl">Contenido</label><textarea className="fi" value={notaModal.resumen} onChange={e=>setNotaModal(n=>({...n,resumen:e.target.value}))} placeholder="Escribí tu nota..." style={{minHeight:90,resize:'vertical'}}/></div>
+            <button className="btn btn-sm" style={{background:'var(--purple)',color:'white',border:'none',width:'100%',justifyContent:'center',padding:'10px'}} onClick={()=>submitNota(true)}>Publicar 🚀</button>
           </div>
         </div>
       )}
