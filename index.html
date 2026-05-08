@@ -6252,15 +6252,22 @@ function RedFeedTab({notas, addToast, sumar}){
   function like(id){
     setItems(it=>it.map(n=>{
       if(n.id!==id) return n;
-      if(n.likedByMe){ // unlike
+      if(n.likedByMe){ // unlike — solo quita el like visual, NO resta karma
         const nuevo = {...n, likes:Math.max(0,(n.likes||1)-1), likedByMe:false};
         try{ const l=JSON.parse(ls.get('red_likes')||'{}'); delete l[id]; ls.set('red_likes',JSON.stringify(l)); }catch{}
         return nuevo;
       } else { // like
         const nuevo = {...n, likes:(n.likes||0)+1, likedByMe:true};
         try{ const l=JSON.parse(ls.get('red_likes')||'{}'); l[id]=1; ls.set('red_likes',JSON.stringify(l)); }catch{}
-        sumar('like',1);
-        addToast({msg:'👍 +1 karma',type:'ok'});
+        // Karma solo se suma UNA vez por nota, aunque des unlike y vuelvas a likear
+        try{
+          const yaKarma = JSON.parse(ls.get('red_likes_karma')||'[]');
+          if(!yaKarma.includes(id)){
+            sumar('like',1);
+            addToast({msg:'👍 +1 karma',type:'ok'});
+            ls.set('red_likes_karma', JSON.stringify([...yaKarma, id]));
+          }
+        }catch{ sumar('like',1); addToast({msg:'👍 +1 karma',type:'ok'}); }
         return nuevo;
       }
     }));
@@ -6666,7 +6673,19 @@ function RedKarmaTab({karma, nivel, progreso, nextNivel, sumar, addToast}){
           </div>
         </>
       )}
-      <button className="btn btn-t" style={{marginTop:14,width:'100%',justifyContent:'center'}} onClick={()=>{sumar('test',5);addToast({msg:'¡+5 karma de prueba! ⭐',type:'ok'});}}>
+      <button className="btn btn-t" style={{marginTop:14,width:'100%',justifyContent:'center'}} onClick={()=>{
+        const ultima = parseInt(ls.get('red_karma_test_ts')||'0');
+        const ahora = Date.now();
+        const horas24 = 24*60*60*1000;
+        if(ahora - ultima < horas24){
+          const mins = Math.ceil((horas24-(ahora-ultima))/60000);
+          addToast({msg:`Ya usaste el bonus hoy. Volvé en ${mins} min ⏳`,type:'err'});
+          return;
+        }
+        ls.set('red_karma_test_ts', String(ahora));
+        sumar('test',5);
+        addToast({msg:'¡+5 karma de prueba! ⭐ (1 vez por día)',type:'ok'});
+      }}>
         Ganar 5 puntos de prueba ⭐
       </button>
     </div>
