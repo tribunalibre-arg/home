@@ -2162,11 +2162,20 @@ function CmFeedTab({user,addToast,sumarPuntos}){
         }else{
           await sb.from('post_likes').insert({post_id:postId,user_id:uid});
           await sb.rpc('increment_likes',{post_id:postId,delta:1});
-          sumarPuntos('recibirLike');
+          // karma solo una vez por post
+          try{
+            const ya=JSON.parse(ls.get('cm_likes_karma')||'[]');
+            if(!ya.includes(postId)){ sumarPuntos('recibirLike'); ls.set('cm_likes_karma',JSON.stringify([...ya,postId])); }
+          }catch{ sumarPuntos('recibirLike'); }
         }
       }catch(e){console.warn('Like error:',e.message);}
     } else {
-      if(!yaLiked) sumarPuntos('recibirLike');
+      if(!yaLiked){
+        try{
+          const ya=JSON.parse(ls.get('cm_likes_karma')||'[]');
+          if(!ya.includes(postId)){ sumarPuntos('recibirLike'); ls.set('cm_likes_karma',JSON.stringify([...ya,postId])); }
+        }catch{ sumarPuntos('recibirLike'); }
+      }
     }
   }
 
@@ -2331,7 +2340,9 @@ function CmEncuestasTab({user,addToast,sumarPuntos}){
   const sb = window.__supabase;
   const esAuth = user?.isGuest===false;
   const [encuestas,setEncuestas]=useState(STATIC_POLLS.map(p=>({...p,cierre:Date.now()+86400000,autor:'TribunaLibre',votantes:{},comentarios:[]})));
-  const [votos,setVotos]=useState({});
+  const [votos,setVotos]=useState(()=>{
+    try{return JSON.parse(ls.get('cm_encuestas_votos')||'{}');}catch{return {};}
+  });
   const [showForm,setShowForm]=useState(false);
   const [pollQ,setPollQ]=useState('');
   const [pollOpts,setPollOpts]=useState(['','']);
@@ -2357,10 +2368,13 @@ function CmEncuestasTab({user,addToast,sumarPuntos}){
   function guardarEncuestas(n){setEncuestas(n);}
 
   function votar(encId,optIdx){
-    if(votos[encId]!==undefined) return;
-    setVotos(v=>({...v,[encId]:optIdx}));
+    if(votos[encId]!==undefined){addToast({msg:'Ya votaste en esta encuesta ✓',type:'err'});return;}
+    const nuevosVotos={...votos,[encId]:optIdx};
+    setVotos(nuevosVotos);
+    try{ls.set('cm_encuestas_votos',JSON.stringify(nuevosVotos));}catch{}
     guardarEncuestas(encuestas.map(e=>e.id===encId?{...e,vs:e.vs.map((x,i)=>i===optIdx?x+1:x)}:e));
-    sumarPuntos('comentar');addToast({msg:'¡Voto registrado! ⚡',type:'ok'});
+    sumarPuntos('ganarEncuesta');
+    addToast({msg:'¡Voto registrado! +15 pts ⚡',type:'ok'});
   }
 
   async function crearEncuesta(e){
@@ -2693,14 +2707,16 @@ function CmRankingTab({perfil,userId}){
 
 function CmSeccionesTab({user,addToast,sumarPuntos}){
   const [sub,setSub]=useState('predicciones');
-  const [predicciones,setPredicciones]=useState({});
+  const [predicciones,setPredicciones]=useState(()=>{
+    try{return JSON.parse(ls.get('cm_predicciones')||'{}');}catch{return {};}
+  });
   const [clips,setClips]=useState([
     {id:1,u:'ColapintoAR',url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',desc:'⚽ Golazo de Borja en el Superclásico',likes:34,sport:'⚽ Fútbol',time:'Hace 1h'},
     {id:2,u:'PumasFan',url:'https://www.youtube.com/watch?v=dQw4w9WgXcQ',desc:'🏉 Try de Matera — histórico',likes:67,sport:'🏉 Rugby',time:'Hace 2h'},
   ]);
   const [clipForm,setClipForm]=useState({url:'',desc:'',sport:'⚽ Fútbol'});
   const [likesClip,setLikesClip]=useState({});
-  const [votoDesafio,setVotoDesafio]=useState(null);
+  const [votoDesafio,setVotoDesafio]=useState(()=>ls.get('cm_desafio_voto')||null);
 
   const PARTIDOS=[{id:1,h:'Argentina 🇦🇷',a:'🇧🇷 Brasil',fecha:'Hoy 21:00'},{id:2,h:'River 🔴',a:'🔵 Boca',fecha:'Dom 17:00'},{id:3,h:'Los Pumas 🏉',a:'🏉 All Blacks',fecha:'Sáb 20:30'}];
   const DESAFIO={tema:'¿Fue el VAR correcto en el último Superclásico?',posA:'✅ Sí — decisión correcta',posB:'❌ No — error arbitral claro',votosA:1240,votosB:980};
@@ -2711,6 +2727,36 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
     setClips(c=>[{id:Date.now(),u:nombreUsuario,url:clipForm.url,desc:clipForm.desc||'Clip deportivo',likes:0,sport:clipForm.sport,time:'Ahora'},...c]);
     setClipForm({url:'',desc:'',sport:'⚽ Fútbol'});
     sumarPuntos('compartir');addToast({msg:'¡Clip compartido! +5 pts 🎬',type:'ok'});
+  }
+
+  function toggleLikeClip(clipId){
+    setLikesClip(l=>{
+      const yaLiked=l[clipId];
+      const nuevo={...l,[clipId]:!yaLiked};
+      // karma solo en el primer like, nunca en unlike
+      if(!yaLiked){
+        try{
+          const ya=JSON.parse(ls.get('cm_clips_karma')||'[]');
+          if(!ya.includes(clipId)){ sumarPuntos('recibirLike'); ls.set('cm_clips_karma',JSON.stringify([...ya,clipId])); }
+        }catch{ sumarPuntos('recibirLike'); }
+      }
+      return nuevo;
+    });
+  }
+
+  function predecir(partidoId, nombre){
+    const nuevas={...predicciones,[partidoId]:nombre};
+    setPredicciones(nuevas);
+    try{ls.set('cm_predicciones',JSON.stringify(nuevas));}catch{}
+    sumarPuntos('comentar');
+    addToast({msg:'Predicción guardada +1 pt',type:'ok'});
+  }
+
+  function votarDesafio(opcion){
+    setVotoDesafio(opcion);
+    try{ls.set('cm_desafio_voto',opcion);}catch{}
+    sumarPuntos('ganarEncuesta');
+    addToast({msg:'¡Voto registrado! +15 pts',type:'ok'});
   }
 
   return (
@@ -2735,7 +2781,7 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
               ):(
                 <div style={{display:'flex',gap:6}}>
                   {[['1',p.h.split(' ')[0]],['X','Empate'],['2',p.a.split(' ')[0]]].map(([cod,nm])=>(
-                    <button key={cod} onClick={()=>{setPredicciones(pr=>({...pr,[p.id]:nm}));sumarPuntos('comentar');addToast({msg:`Predicción guardada +1 pt`,type:'ok'});}}
+                    <button key={cod} onClick={()=>predecir(p.id,nm)}
                       className="btn btn-o btn-sm" style={{flex:1,justifyContent:'center',fontFamily:'var(--fd)'}}>{cod} {nm}</button>
                   ))}
                 </div>
@@ -2767,7 +2813,7 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
                 {yt&&<div style={{borderRadius:'var(--rs)',overflow:'hidden',marginBottom:8,aspectRatio:'16/9'}}><iframe width="100%" height="100%" src={`https://www.youtube.com/embed/${yt[1]}`} frameBorder="0" allowFullScreen title="clip"/></div>}
                 <div className="post-body">{clip.desc}</div>
                 <div className="post-actions">
-                  <button className={`abt${likesClip[clip.id]?' lk':''}`} onClick={()=>{setLikesClip(l=>({...l,[clip.id]:!l[clip.id]}));sumarPuntos('recibirLike');}}><Ic.Heart/> {clip.likes+(likesClip[clip.id]?1:0)}</button>
+                  <button className={`abt${likesClip[clip.id]?' lk':''}`} onClick={()=>toggleLikeClip(clip.id)}><Ic.Heart/> {clip.likes+(likesClip[clip.id]?1:0)}</button>
                 </div>
               </div>
             );
@@ -2790,8 +2836,8 @@ function CmSeccionesTab({user,addToast,sumarPuntos}){
               </div>
             ):(
               <div style={{display:'flex',gap:8,flexDirection:'column'}}>
-                <button className="btn" style={{justifyContent:'center',background:'rgba(39,174,96,.1)',border:'1.5px solid var(--green)',color:'#1E8449'}} onClick={()=>{setVotoDesafio('A');sumarPuntos('ganarEncuesta');addToast({msg:'¡Voto registrado! +15 pts',type:'ok'});}}>{DESAFIO.posA}</button>
-                <button className="btn" style={{justifyContent:'center',background:'rgba(192,57,43,.08)',border:'1.5px solid var(--red)',color:'var(--red)'}} onClick={()=>{setVotoDesafio('B');sumarPuntos('ganarEncuesta');addToast({msg:'¡Voto registrado! +15 pts',type:'ok'});}}>{DESAFIO.posB}</button>
+                <button className="btn" style={{justifyContent:'center',background:'rgba(39,174,96,.1)',border:'1.5px solid var(--green)',color:'#1E8449'}} onClick={()=>votarDesafio('A')}>{DESAFIO.posA}</button>
+                <button className="btn" style={{justifyContent:'center',background:'rgba(192,57,43,.08)',border:'1.5px solid var(--red)',color:'var(--red)'}} onClick={()=>votarDesafio('B')}>{DESAFIO.posB}</button>
               </div>
             )}
           </div>
@@ -3680,10 +3726,36 @@ function ComunidadPage({user,addToast,onNav}){
   ]);
   const chatRef=useRef();
 
+  const chatAutoRespuestas = [
+    '¡Estoy de acuerdo! Este equipo la rompe 🔥',
+    'El fútbol argentino en su mejor momento 🇦🇷',
+    '¿Viste el último partido? Increíble 👏',
+    'Los Pumas también tienen chances este año 🏉',
+    'El VAR sigue siendo un tema polémico jajaja 😅',
+    'Colapinto para siempre ❤️ ese pibe tiene futuro',
+    'La verdad que sí, muy buen análisis 💯',
+    'Tribuna Libre la mejor comunidad deportiva 🏆',
+  ];
+  const chatAutoUsers = ['Gonzalo_TL','ScrumMaster','RiverFan22','BocaAzul','TriunfoAR','PumasHincha'];
+
   function sendChat(){
     if(!chatMsg.trim()) return;
-    setChatMsgs(m=>[...m,{id:Date.now(),u:'Vos',text:chatMsg,own:true}]);
-    setChatMsg('');setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    const msg = chatMsg.trim();
+    setChatMsgs(m=>[...m,{id:Date.now(),u:'Vos',text:msg,own:true}]);
+    setChatMsg('');
+    sumarPuntos('comentar');
+    setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    // auto-respuesta
+    setTimeout(()=>{
+      const resp={
+        id:Date.now()+1,
+        u:chatAutoUsers[Math.floor(Math.random()*chatAutoUsers.length)],
+        text:chatAutoRespuestas[Math.floor(Math.random()*chatAutoRespuestas.length)],
+        own:false
+      };
+      setChatMsgs(m=>[...m,resp]);
+      setTimeout(()=>{if(chatRef.current)chatRef.current.scrollTop=chatRef.current.scrollHeight;},50);
+    }, 1000 + Math.random()*1000);
   }
 
   const TABS_COM=[
@@ -3747,13 +3819,13 @@ function ComunidadPage({user,addToast,onNav}){
           </div>
         </div>
       )}
-      {tab==='debates'&&<DebatesTab user={user} addToast={addToast}/>}
+      {tab==='debates'&&<DebatesTab user={user} addToast={addToast} sumarPuntos={sumarPuntos}/>}
     </div>
   );
 }
 
 /* ══════ DEBATES TAB (preservado, ahora usa CM_THREADS) ══════ */
-function DebatesTab({user,addToast}){
+function DebatesTab({user,addToast,sumarPuntos}){
   const sb = window.__supabase;
   const esAuth = user?.isGuest===false;
   const username = user?.displayName||user?.username||'Anónimo';
@@ -3801,7 +3873,8 @@ function DebatesTab({user,addToast}){
     setThreads(t=>[nuevo,...t]);
     setForm({title:'',body:'',category:'General'});
     setShowForm(false);
-    addToast({msg:'¡Hilo creado! 🔥',type:'ok'});
+    sumarPuntos('publicar');
+    addToast({msg:'¡Hilo creado! +10 pts 🔥',type:'ok'});
   }
 
   async function cargarComentarios(threadId){
@@ -3832,7 +3905,8 @@ function DebatesTab({user,addToast}){
     setComentarios(c=>({...c,[threadId]:[...(c[threadId]||[]),nuevo]}));
     setThreads(t=>t.map(x=>x.id===threadId?{...x,r:x.r+1}:x));
     setComentTxt('');
-    addToast({msg:'Comentario publicado ✓',type:'ok'});
+    sumarPuntos('comentar');
+    addToast({msg:'Comentario publicado +1 pt ✓',type:'ok'});
   }
 
   function abrirHilo(id){
