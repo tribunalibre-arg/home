@@ -271,41 +271,29 @@ window.fetchTheNewsAPI = async function() {
 };
 
 // ── Imagen deportiva por tema — fotos Unsplash curadas por keyword ──
-// Se usa como fallback cuando la noticia no trae imagen propia.
-// IDs verificados de Unsplash, sin restricciones de referrer.
+// getSportsImage — ya no usamos Unsplash genérico que puede devolver
+// imágenes descontextualizadas. Devolvemos null para que el placeholder
+// del componente muestre el emoji del deporte en su lugar.
 window.getSportsImage = function(titulo) {
+  return null;
+};
+
+// CAT_EMOJI_MAP — emoji por palabras clave en el título (para placeholder)
+window.getSportsEmoji = function(titulo) {
   const t = (titulo || '').toLowerCase();
-  const MAP = [
-    [['selección','albiceleste','mundial','copa del mundo','eliminatorias'],
-      'photo-1574629810360-7efbbe195018'],
-    [['fútbol','futbol','gol','river','boca','racing','independiente','belgrano',
-       'vélez','hurac','libertadores','sudamericana','liga profesional','primera división',
-       'superclásico','arsenal','san martín','talleres'],
-      'photo-1431324155629-1a6dac1f3579'],
-    [['rugby','pumas','scrum','line-out','try','toulon','stade','top 14'],
-      'photo-1562077981-4d7eafd44932'],
-    [['tenis','tennis','roland','wimbledon','us open','atp','wta',
-       'cerundolo','del potro','federer','djokovic','alcaraz'],
-      'photo-1554068865-24ceec13d724'],
-    [['básquet','basquet','basket','nba','liga nacional','campazzo','vildoza','laprovittola'],
-      'photo-1546519638-68e109498ffc'],
-    [['fórmula','formula','f1','colapinto','verstappen','ferrari','hamilton','motogp','moto gp'],
-      'photo-1558618666-fcd25c85cd64'],
-    [['hockey','leonas','palo','puck'],
-      'photo-1580748141549-71748dbe0bdc'],
-    [['boxeo','box','ufc','mma','pelea','combate','ring'],
-      'photo-1547153760-18fc86324498'],
-    [['atletismo','maratón','natación','olimpíadas','juegos olímpicos','decatlón','salto'],
-      'photo-1517649763962-0c623066013b'],
-    [['voley','vóleibol','volley','netball'],
-      'photo-1612872087720-bb876e2e67d1'],
-  ];
-  for (const [kws, id] of MAP) {
-    if (kws.some(k => t.includes(k)))
-      return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=800&h=450&q=70`;
-  }
-  // Deporte genérico — estadio con tribunas
-  return `https://images.unsplash.com/photo-1461896836934-ffe607ba8211?auto=format&fit=crop&w=800&h=450&q=70`;
+  if (t.match(/fútbol|futbol|gol|river|boca|racing|independiente|belgrano|vélez|hurac|libertadores|sudamericana|liga profesional|superclásico|messi|maradona|selección|albiceleste|mundial|copa del mundo/)) return '⚽';
+  if (t.match(/rugby|pumas|scrum|try|toulon/)) return '🏉';
+  if (t.match(/tenis|tennis|roland|wimbledon|us open|atp|wta|cerundolo|del potro|alcaraz/)) return '🎾';
+  if (t.match(/básquet|basquet|basket|nba|liga nacional|campazzo|vildoza/)) return '🏀';
+  if (t.match(/fórmula|formula|f1|colapinto|verstappen|ferrari|hamilton|motogp/)) return '🏎️';
+  if (t.match(/hockey|leonas/)) return '🏑';
+  if (t.match(/boxeo|box|ufc|mma|pelea|combate|ring/)) return '🥊';
+  if (t.match(/atletismo|maratón|natación|olimpíadas|juegos olímpicos/)) return '🏃';
+  if (t.match(/voley|vóleibol|volley/)) return '🏐';
+  if (t.match(/golf/)) return '⛳';
+  if (t.match(/béisbol|baseball/)) return '⚾';
+  if (t.match(/natación|swimming/)) return '🏊';
+  return '📰';
 };
 
 // Google News RSS — contenido deportivo argentino, sin bloqueos
@@ -1501,7 +1489,9 @@ function useNews(page=1, cat='', search='') {
         ...a,
         coverImage: a.coverImage || window.getSportsImage(a.title)
       }));
-      let allPosts = [...withImg, ...rssConFallback].sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
+      let allPosts = [...withImg, ...rssConFallback]
+        .filter(p => p.coverImage)   // solo noticias con imagen real
+        .sort((a,b) => new Date(b.publishedAt)-new Date(a.publishedAt));
       if (cat)    allPosts = allPosts.filter(p => (p.cat||p.category||'').toLowerCase().includes(cat.toLowerCase()));
       if (search) allPosts = allPosts.filter(p => p.title.toLowerCase().includes(search.toLowerCase()) || (p.excerpt||'').toLowerCase().includes(search.toLowerCase()));
       const limit = 18;
@@ -1564,7 +1554,21 @@ function Poll({ poll }) {
 /* ══════ HeroImg — fallback correcto cuando la imagen falla ══════ */
 function HeroImg({ src, alt, emoji }) {
   const [failed, setFailed] = useState(false);
-  if (!src || failed) return <span style={{fontSize:80}}>{emoji}</span>;
+  if (!src || failed) return (
+    <div style={{
+      width:'100%',height:'100%',minHeight:200,
+      background:'linear-gradient(135deg,#0a1628 0%,#1a2744 60%,#0a3d1f 100%)',
+      display:'flex',flexDirection:'column',
+      alignItems:'center',justifyContent:'center',gap:10,
+      position:'relative',overflow:'hidden',
+    }}>
+      <div style={{
+        position:'absolute',inset:0,
+        backgroundImage:'radial-gradient(circle at 30% 70%, rgba(74,144,217,.12) 0%, transparent 55%), radial-gradient(circle at 70% 30%, rgba(39,174,96,.08) 0%, transparent 55%)',
+      }}/>
+      <span style={{fontSize:72,filter:'drop-shadow(0 4px 16px rgba(0,0,0,.5))',position:'relative'}}>{emoji}</span>
+    </div>
+  );
   return <img src={src} alt={alt} referrerPolicy="no-referrer" onError={()=>setFailed(true)}/>;
 }
 
@@ -1596,9 +1600,26 @@ function NewsCard({ post, onClick }) {
       <div className="nc-img big">
         {showImg
           ? <img src={post.coverImage} alt={post.title} referrerPolicy="no-referrer" onError={()=>setImgFailed(true)}/>
-          : <div style={{width:'100%',height:'100%',background:bgGrad,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',gap:6}}>
-              <span style={{fontSize:44}}>{em}</span>
-              <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,.5)',letterSpacing:1,textTransform:'uppercase'}}>{cat}</span>
+          : <div style={{
+              width:'100%',height:'100%',
+              background: bgGrad,
+              display:'flex',flexDirection:'column',
+              alignItems:'center',justifyContent:'center',
+              gap:8,
+              position:'relative',
+              overflow:'hidden',
+            }}>
+              {/* Pattern decorativo */}
+              <div style={{
+                position:'absolute',inset:0,
+                backgroundImage:'radial-gradient(circle at 20% 80%, rgba(255,255,255,.06) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255,255,255,.04) 0%, transparent 50%)',
+              }}/>
+              <span style={{fontSize:40,filter:'drop-shadow(0 2px 8px rgba(0,0,0,.3))',position:'relative',zIndex:1}}>{em}</span>
+              <span style={{
+                fontSize:9,fontWeight:700,color:'rgba(255,255,255,.45)',
+                letterSpacing:1.5,textTransform:'uppercase',
+                position:'relative',zIndex:1,
+              }}>{post.meta?.sourceName || cat}</span>
             </div>
         }
         <div className="nc-cat"><span className="badge bc">{cat}</span></div>
