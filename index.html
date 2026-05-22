@@ -593,7 +593,127 @@ img{max-width:100%;height:auto;display:block}
 .bni svg{width:17px;height:17px}
 .bni span{font-size:9px;font-weight:600;font-family:var(--fd);letter-spacing:.3px}
 @media(min-width:860px){.bnav{display:none}}
-@media(max-width:859px){body{padding-bottom:54px}}
+@media(max-width:859px){body{padding-bottom:0}}
+
+/* ═══════════════════════════════════════════
+   MOBILE SIDEBAR — colapsado 60px / abierto 260px
+   ═══════════════════════════════════════════ */
+@media(max-width:859px){
+  body{padding-left:60px}
+  .bnav{display:none!important}
+
+  .msb{
+    position:fixed;
+    left:0;top:calc(var(--h) + 5px);bottom:0;
+    width:60px;
+    background:var(--white);
+    border-right:1.5px solid var(--br);
+    z-index:350;
+    display:flex;flex-direction:column;
+    transition:width .28s cubic-bezier(.4,0,.2,1);
+    overflow:hidden;
+    box-shadow:3px 0 18px rgba(74,144,217,.12);
+  }
+  .msb.open{width:260px}
+
+  /* Fondo decorativo inferior */
+  .msb::after{
+    content:'';position:absolute;bottom:0;left:0;right:0;height:220px;
+    background:radial-gradient(ellipse at 50% 120%, rgba(74,144,217,.09) 0%, transparent 70%);
+    pointer-events:none;z-index:0;
+  }
+  .msb > *{position:relative;z-index:1}
+
+  /* Botón hamburger */
+  .msb-toggle{
+    height:50px;min-height:50px;
+    display:flex;align-items:center;
+    padding:0 18px;gap:14px;
+    cursor:pointer;
+    border-bottom:1px solid var(--br);
+    flex-shrink:0;
+    user-select:none;
+  }
+  .msb-toggle:hover{background:var(--cel-xl)}
+  .msb-ham{display:flex;flex-direction:column;justify-content:center;gap:4.5px;width:20px;flex-shrink:0}
+  .msb-ham span{display:block;height:2px;background:var(--cel-d);border-radius:2px;transition:all .25s}
+  .msb.open .msb-ham span:nth-child(1){transform:translateY(6.5px) rotate(45deg)}
+  .msb.open .msb-ham span:nth-child(2){opacity:0;transform:scaleX(0)}
+  .msb.open .msb-ham span:nth-child(3){transform:translateY(-6.5px) rotate(-45deg)}
+  .msb-brand{font-family:var(--fd);font-size:13px;font-weight:700;color:var(--cel-d);letter-spacing:1.5px;white-space:nowrap;opacity:0;transition:opacity .15s .12s}
+  .msb.open .msb-brand{opacity:1}
+
+  /* Scroll area */
+  .msb-scroll{flex:1;overflow-y:auto;overflow-x:hidden;padding:6px 0 10px;scrollbar-width:none}
+  .msb-scroll::-webkit-scrollbar{display:none}
+
+  /* Group label */
+  .msb-glbl{
+    font-size:8.5px;font-weight:700;letter-spacing:1.8px;
+    text-transform:uppercase;color:var(--tx3);
+    padding:8px 14px 3px;white-space:nowrap;
+    opacity:0;transition:opacity .15s .1s;
+  }
+  .msb.open .msb-glbl{opacity:1}
+
+  /* Nav item */
+  .msb-item{
+    display:flex;align-items:center;gap:14px;
+    padding:10px 0 10px 18px;
+    cursor:pointer;color:var(--tx2);
+    font-size:13px;font-weight:500;white-space:nowrap;
+    border-left:3px solid transparent;
+    transition:all .18s cubic-bezier(.34,1.2,.64,1);
+    position:relative;
+  }
+  .msb-item:hover{background:var(--cel-xl);color:var(--cel-d);border-left-color:rgba(74,144,217,.4)}
+  .msb-item.on{background:var(--cel-xl);color:var(--cel-d);border-left-color:var(--cel);font-weight:600}
+  .msb-item.on::before{
+    content:'';position:absolute;right:0;top:50%;transform:translateY(-50%);
+    width:4px;height:24px;background:var(--cel);border-radius:4px 0 0 4px;opacity:.5;
+  }
+
+  /* Icono */
+  .msb-icon{font-size:18px;width:24px;text-align:center;flex-shrink:0;line-height:1}
+
+  /* Label (solo visible cuando abierto) */
+  .msb-lbl{opacity:0;transition:opacity .15s .08s;line-height:1.2}
+  .msb.open .msb-lbl{opacity:1}
+
+  /* Separador de grupos */
+  .msb-sep{height:1px;background:var(--br);margin:5px 12px}
+
+  /* Footer usuario */
+  .msb-footer{
+    border-top:1px solid var(--br);
+    padding:10px 14px;flex-shrink:0;
+    overflow:hidden;
+  }
+  .msb-u{display:flex;align-items:center;gap:10px;cursor:pointer;padding:6px 4px;border-radius:8px;transition:.15s}
+  .msb-u:hover{background:var(--cel-xl)}
+  .msb-av{width:30px;height:30px;border-radius:50%;background:var(--cel);display:flex;align-items:center;justify-content:center;font-family:var(--fd);font-size:12px;font-weight:700;color:white;flex-shrink:0}
+  .msb-unm{font-size:12px;font-weight:600;color:var(--cel-d);white-space:nowrap;opacity:0;transition:opacity .15s .1s}
+  .msb.open .msb-unm{opacity:1}
+  .msb-loginbtn{
+    display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:8px;border-radius:8px;background:var(--cel);color:white;
+    font-size:12px;font-weight:600;cursor:pointer;transition:.15s;white-space:nowrap;
+  }
+  .msb-loginbtn:hover{background:var(--cel-d)}
+  .msb-loginbtn span:last-child{opacity:0;transition:opacity .15s .1s}
+  .msb.open .msb-loginbtn span:last-child{opacity:1}
+}
+
+/* Overlay backdrop */
+.msb-overlay{
+  position:fixed;inset:0;
+  background:rgba(26,39,68,.55);
+  z-index:349;
+  backdrop-filter:blur(3px);
+  display:none;
+}
+@media(max-width:859px){.msb-overlay{display:block}}
+
 
 /* MOBILE FULL MENU */
 .mobile-menu-overlay{position:fixed;inset:0;background:rgba(26,39,68,.68);z-index:498;animation:mmfadeIn .22s ease;backdrop-filter:blur(5px)}
@@ -8926,44 +9046,102 @@ function App() {
         <aside className="rsb"><RightSidebar onNav={nav} posts={posts}/></aside>
       </div>
 
-      {/* MOBILE BOTTOM NAV */}
-      <div className="bnav">
-        {MOBILE_NAV.map(n => {
-          const Icon = Ic[n.icon];
-          if (!Icon) return null;
-          const isMenu = n.id === '__menu__';
-          const isOn   = isMenu ? mobileMenuOpen : (page === n.id);
-          return (
-            <div
-              key={n.id}
-              className={`bni${isOn ? ' on' : ''}`}
-              style={isMenu && mobileMenuOpen ? {color:'var(--cel-d)',position:'relative'} : {position:'relative'}}
-              onClick={() => {
-                if (isMenu) {
-                  setMobileMenuOpen(o => !o);
-                } else {
-                  setMobileMenuOpen(false);
-                  nav(n.id);
-                }
-              }}
-            >
-              <Icon/>
-              <span>{n.l}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* MOBILE FULL MENU DRAWER */}
-      {mobileMenuOpen && (
-        <MobileMenuFull
-          page={page}
-          onNav={(id) => { nav(id); setMobileMenuOpen(false); }}
-          onClose={() => setMobileMenuOpen(false)}
-        />
-      )}
+      {/* MOBILE SIDEBAR */}
+      <MobileSidebar
+        page={page}
+        onNav={nav}
+        open={mobileMenuOpen}
+        onToggle={() => setMobileMenuOpen(o => !o)}
+        user={user}
+        onAuthOpen={() => setAuthOpen(true)}
+      />
 
       {authOpen && <AuthModal onClose={()=>setAuthOpen(false)} onLogin={setUser} addToast={addToast}/>}
+    </>
+  );
+}
+
+/* ══════════════════════════ MOBILE SIDEBAR COMPONENT ══════════════════════════ */
+const MSB_GROUPS = [
+  {
+    label: 'Principal',
+    items: [
+      {id:'home',      em:'🏠', l:'Inicio'},
+      {id:'news',      em:'📰', l:'Noticias'},
+      {id:'live',      em:'🔴', l:'En Vivo'},
+    ]
+  },
+  {
+    label: 'Secciones',
+    items: [
+      {id:'comunidad', em:'🏟️', l:'Somos Tribuna'},
+      {id:'streaming', em:'📡', l:'Streaming'},
+      {id:'prode',     em:'🏆', l:'La Tribu Predice'},
+      {id:'revista',   em:'🌟', l:'La Tribu Descubre'},
+      {id:'red',       em:'🌐', l:'Red de Periodismo'},
+      {id:'podcast',   em:'🎙️', l:'Podcast'},
+      {id:'var',       em:'💬', l:'El VAR'},
+    ]
+  },
+  {
+    label: 'Personal',
+    items: [
+      {id:'profile',   em:'👤', l:'Mi Perfil'},
+      {id:'admin',     em:'🛡️', l:'Admin'},
+    ]
+  }
+];
+
+function MobileSidebar({ page, onNav, open, onToggle, user, onAuthOpen }) {
+  return (
+    <>
+      {open && <div className="msb-overlay" onClick={onToggle}/>}
+      <div className={`msb${open ? ' open' : ''}`}>
+
+        {/* ── Hamburger toggle ── */}
+        <div className="msb-toggle" onClick={onToggle}>
+          <div className="msb-ham">
+            <span/><span/><span/>
+          </div>
+          <span className="msb-brand">TRIBUNA LIBRE</span>
+        </div>
+
+        {/* ── Nav items ── */}
+        <div className="msb-scroll">
+          {MSB_GROUPS.map((group, gi) => (
+            <div key={gi}>
+              <div className="msb-glbl">{group.label}</div>
+              {group.items.map(n => (
+                <div
+                  key={n.id}
+                  className={`msb-item${page === n.id ? ' on' : ''}`}
+                  onClick={() => { onNav(n.id); onToggle(); }}
+                >
+                  <span className="msb-icon">{n.em}</span>
+                  <span className="msb-lbl">{n.l}</span>
+                </div>
+              ))}
+              {gi < MSB_GROUPS.length - 1 && <div className="msb-sep"/>}
+            </div>
+          ))}
+        </div>
+
+        {/* ── Footer usuario ── */}
+        <div className="msb-footer">
+          {user?.isGuest ? (
+            <div className="msb-loginbtn" onClick={onAuthOpen}>
+              <span>🔐</span>
+              <span>Ingresar / Registrarse</span>
+            </div>
+          ) : (
+            <div className="msb-u" onClick={() => { onNav('profile'); onToggle(); }}>
+              <div className="msb-av">{(user.displayName||user.username||'U')[0].toUpperCase()}</div>
+              <span className="msb-unm">{user.displayName||user.username}</span>
+            </div>
+          )}
+        </div>
+
+      </div>
     </>
   );
 }
