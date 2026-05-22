@@ -557,13 +557,18 @@ img{max-width:100%;height:auto;display:block}
 
 /* SHELL — FIX: columna central siempre visible con overflow correcto */
 .shell{display:flex;margin-top:0;min-height:calc(100vh - var(--h) - 5px)}
-.lnav{width:200px;flex-shrink:0;position:sticky;top:calc(var(--h)+5px);align-self:flex-start;background:var(--white);border-right:1px solid var(--br);padding:10px 0;display:none;flex-direction:column}
+.lnav{width:200px;flex-shrink:0;position:sticky;top:calc(var(--h)+5px);align-self:flex-start;background:var(--white);border-right:1px solid var(--br);padding:10px 0;display:none;flex-direction:column;overflow:hidden}
+.lnav::after{content:'';position:absolute;bottom:0;left:0;right:0;height:200px;background-image:radial-gradient(ellipse at 50% 110%, rgba(30,95,168,.10) 0%, transparent 70%);pointer-events:none;z-index:0}
+.lnav > *{position:relative;z-index:1}
 @media(min-width:860px){.lnav{display:flex}}
 .ng{padding:0 8px;margin-bottom:5px}
 .nlbl{font-size:9px;font-weight:700;color:var(--tx3);letter-spacing:1.8px;text-transform:uppercase;padding:0 6px;margin-bottom:3px;display:block}
-.nl{display:flex;align-items:center;gap:7px;padding:7px 8px;border-radius:var(--rs);cursor:pointer;color:var(--tx2);font-size:12.5px;font-weight:500;transition:.15s;margin-bottom:1px}
-.nl:hover{background:var(--cel-xl);color:var(--cel-d)}
-.nl.on{background:var(--cel);color:white}
+.nl{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:9px;cursor:pointer;color:var(--tx2);font-size:12.5px;font-weight:500;transition:all .2s cubic-bezier(.34,1.2,.64,1);margin-bottom:2px;border:1px solid transparent;box-shadow:0 1px 3px rgba(0,0,0,.04);position:relative;overflow:hidden}
+.nl::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--cel);border-radius:0 3px 3px 0;transform:scaleY(0);transition:transform .2s cubic-bezier(.34,1.2,.64,1)}
+.nl:hover{background:var(--cel-xl);color:var(--cel-d);border-color:rgba(var(--cel-rgb),.15);transform:translateX(3px);box-shadow:0 3px 10px rgba(0,0,0,.08)}
+.nl:hover::before{transform:scaleY(1)}
+.nl.on{background:var(--cel);color:white;border-color:var(--cel-d);box-shadow:0 3px 12px rgba(0,0,0,.15)}
+.nl.on::before{transform:scaleY(1);background:rgba(255,255,255,.5)}
 .nl svg{width:14px;height:14px;flex-shrink:0}
 .nl-badge{margin-left:auto;background:var(--red);color:white;font-size:9px;border-radius:10px;padding:1px 5px;font-weight:700}
 .nav-hr{height:1px;background:var(--br);margin:6px 10px}
@@ -598,7 +603,8 @@ img{max-width:100%;height:auto;display:block}
 .mmf-hdl{width:38px;height:4px;background:var(--brm);border-radius:4px;margin:10px auto 14px}
 .mmf-label{font-size:9.5px;font-weight:700;color:var(--tx3);letter-spacing:1.8px;text-transform:uppercase;padding:4px 6px 6px;display:block}
 .mmf-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-bottom:4px}
-.mmf-item{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:var(--rs);cursor:pointer;color:var(--tx2);font-size:12.5px;font-weight:500;transition:.15s;border:1px solid var(--br);background:var(--white)}
+.mmf-item{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:var(--rs);cursor:pointer;color:var(--tx2);font-size:12.5px;font-weight:500;transition:all .18s cubic-bezier(.34,1.2,.64,1);border:1px solid var(--br);background:var(--white);box-shadow:0 1px 4px rgba(0,0,0,.05)}
+.mmf-item:hover{border-color:var(--cel);color:var(--cel-d);background:var(--cel-xl);transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
 .mmf-item:active{transform:scale(.97)}
 .mmf-item.on{background:var(--cel);color:white;border-color:var(--cel-d)}
 .mmf-item svg{width:15px;height:15px;flex-shrink:0}
@@ -1597,7 +1603,7 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
       <div className="mobile-sections-home">
         {[
           {id:'news',      em:'📰', l:'Noticias',           sub:'Deportes Argentina',      img:'logochico.png'},
-          {id:'comunidad', em:'👥', l:'Comunidad',           sub:'Foro y debates',          img:'Copilot_20260415_203438%20(1).png'},
+          {id:'comunidad', em:'🏟️', l:'Somos Tribuna',        sub:'Foro y debates',          img:'Copilot_20260415_203438%20(1).png'},
           {id:'streaming', em:'▶️', l:'Streaming',           sub:'En vivo ahora',           img:'stremmers.png'},
           {id:'prode',     em:'🏆', l:'La Tribu Predice',    sub:'Pronósticos y prode',     img:'latribupredice3.JPG'},
           {id:'revista',   em:'✏️', l:'La Tribu Descubre',   sub:'Revista y contenido',     img:'Latribudescubre.JPG'},
@@ -1699,7 +1705,7 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
       {/* ── COMUNIDAD PREVIEW ── */}
       <div className="home-preview">
         <div className="home-preview-hd">
-          <div className="home-preview-title"><span>👥</span>Comunidad</div>
+          <div className="home-preview-title"><span>🏟️</span>Somos Tribuna</div>
           <button className="home-preview-btn" onClick={()=>onNav('comunidad')}>Ver todo →</button>
         </div>
         <div className="home-preview-body">
@@ -1738,7 +1744,7 @@ function HomePage({ onArticle, onNav, posts=[], loading=false, fromApi=false, fe
       {/* ACCESOS RÁPIDOS */}
       <div style={{display:'grid',gap:10,gridTemplateColumns:'1fr 1fr',marginBottom:18}}>
         {[
-          {id:'comunidad',em:'👥',tit:'Comunidad',        sub:'Foro y debates',         col:'var(--cel-d)', bg:'var(--cel-xl)'},
+          {id:'comunidad',em:'🏟️',tit:'Somos Tribuna',     sub:'Foro y debates',         col:'var(--cel-d)', bg:'var(--cel-xl)'},
           {id:'streaming',em:'📡',tit:'Streaming',         sub:'En vivo ahora',          col:'var(--red)',   bg:'rgba(192,57,43,.07)'},
           {id:'prode',    em:'🏆',tit:'La Tribu Predice', sub:'Pronósticos y desafíos', col:'#B7770D',      bg:'#FFFBEB'},
           {id:'revista',  em:'🌟',tit:'La Tribu Descubre',sub:'Talentos emergentes',    col:'#9D174D',      bg:'#FDF2F8'},
@@ -3771,7 +3777,7 @@ function ComunidadPage({user,addToast,onNav}){
           alt="Comunidad Tribuna Libre" loading="lazy" onError={e=>e.target.parentNode.style.display='none'}/>
       </div>
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10,flexWrap:'wrap',gap:8}}>
-        <h1 style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700}}>Comunidad <span style={{color:'var(--cel)'}}>Tribuna Libre</span></h1>
+        <h1 style={{fontFamily:'var(--fd)',fontSize:20,fontWeight:700}}>Somos <span style={{color:'var(--cel)'}}>Tribuna</span></h1>
         {perfil.puntos>0&&<CmPuntsBadge puntos={perfil.puntos}/>}
       </div>
       <p style={{fontSize:12,color:'var(--tx2)',marginBottom:14,lineHeight:1.5}}>Debatí, analizá y compartí con miles de fanáticos argentinos 🇦🇷</p>
@@ -7741,7 +7747,7 @@ function RightSidebar({ onNav, posts=[] }) {
       <div>
         <div className="sh"><div className="st">Secciones</div></div>
         <div style={{display:'grid',gap:6}}>
-          {[{id:'comunidad',em:'👥',l:'Comunidad',          c:'var(--cel-d)', bg:'var(--cel-xl)'},
+          {[{id:'comunidad',em:'🏟️',l:'Somos Tribuna',        c:'var(--cel-d)', bg:'var(--cel-xl)'},
             {id:'streaming',em:'📡',l:'Streaming',           c:'var(--red)',   bg:'rgba(192,57,43,.07)'},
             {id:'prode',    em:'🏆',l:'La Tribu Predice',   c:'#B7770D',      bg:'#FFFBEB'},
             {id:'copa',     em:'🌎',l:'Copa del Mundo',     c:'var(--cel-d)', bg:'var(--cel-xl)'},
@@ -7800,7 +7806,7 @@ function RightSidebar({ onNav, posts=[] }) {
 const NAV = [
   {id:'home',      l:'Inicio',                icon:'Home'},
   {id:'news',      l:'Noticias',              icon:'News'},
-  {id:'comunidad', l:'Comunidad',             icon:'Com'},
+  {id:'comunidad', l:'Somos Tribuna',          icon:'Com'},
   {id:'streaming', l:'Streaming',             icon:'Stream'},
   {id:'prode',     l:'La Tribu Predice',      icon:'Prode'},
   {id:'revista',   l:'La Tribu Descubre',     icon:'Rev'},
@@ -7819,7 +7825,7 @@ const MOBILE_NAV = [
 const FULL_MOBILE_MENU = [
   {id:'home',      l:'Inicio',               em:'🏠', icon:'Home'},
   {id:'news',      l:'Noticias',             em:'📰', icon:'News'},
-  {id:'comunidad', l:'Comunidad',            em:'👥', icon:'Com'},
+  {id:'comunidad', l:'Somos Tribuna',         em:'🏟️', icon:'Com'},
   {id:'streaming', l:'Streaming',            em:'📡', icon:'Stream'},
   {id:'prode',     l:'La Tribu Predice',     em:'🏆', icon:'Prode'},
   {id:'revista',   l:'La Tribu Descubre',    em:'🌟', icon:'Rev'},
@@ -8465,7 +8471,7 @@ function MobileSplashPage({ onNav }) {
     },
     {
       id: 'comunidad',
-      label: 'Comunidad',
+      label: 'Somos Tribuna',
       img: 'https://raw.githubusercontent.com/tribunalibre-arg/home/refs/heads/main/imagenes/Copilot_20260415_203438%20(1).png',
       imgPos: 'center center',
       tint: '#0a4020',
@@ -8819,17 +8825,24 @@ function App() {
           </div>
           <div className="ng">
             <span className="nlbl">Navegación</span>
-            {(navConfig||NAV).map(n => {
+            {(navConfig||NAV).map((n, idx) => {
               const Icon = Ic[n.icon] || Ic['Home'];
               if (!Icon) return null;
+              // Separadores entre grupos
+              const separator = (idx === 2) ? (
+                <div key={`sep-${idx}`} style={{height:1,background:'var(--br)',margin:'4px 10px 6px'}}/>
+              ) : null;
               return (
-                <div key={n.id} className={`nl${page===n.id||(page==='article'&&n.id==='news')?' on':''}`} onClick={()=>nav(n.id)}>
-                  <Icon/><span>{n.l}</span>
-                  {n.id==='prode'     && <span className="nl-badge" style={{background:'var(--sun)'}}>🏆</span>}
-                  {n.id==='live'      && <span className="nl-badge">3</span>}
-                  {n.id==='comunidad' && <span className="nl-badge" style={{background:'var(--cel-d)'}}>●</span>}
-                  {n.id==='streaming' && <span className="nl-badge" style={{background:'var(--red)'}}>▶</span>}
-                </div>
+                <React.Fragment key={n.id}>
+                  {separator}
+                  <div className={`nl${page===n.id||(page==='article'&&n.id==='news')?' on':''}`} onClick={()=>nav(n.id)}>
+                    <Icon/><span>{n.l}</span>
+                    {n.id==='prode'     && <span className="nl-badge" style={{background:'var(--sun)'}}>🏆</span>}
+                    {n.id==='live'      && <span className="nl-badge">3</span>}
+                    {n.id==='comunidad' && <span className="nl-badge" style={{background:'var(--cel-d)'}}>●</span>}
+                    {n.id==='streaming' && <span className="nl-badge" style={{background:'var(--red)'}}>▶</span>}
+                  </div>
+                </React.Fragment>
               );
             })}
           </div>
